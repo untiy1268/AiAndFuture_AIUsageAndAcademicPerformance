@@ -1,0 +1,51 @@
+import pandas as pd
+import numpy as np
+
+df = pd.read_csv("students_ai_usage.csv")
+
+# ──────────────────────────────────────
+# 1. 결측치 처리
+# ──────────────────────────────────────
+# ai_tools_used, purpose_of_ai:
+# uses_ai='No'인 학생의 구조적 결측(MNAR) → "None"으로 명시적 대체
+df["ai_tools_used"] = df["ai_tools_used"].fillna("None")
+df["purpose_of_ai"] = df["purpose_of_ai"].fillna("None")
+
+# ──────────────────────────────────────
+# 2. 이상치 처리 (IQR 기반 클리핑)
+# ──────────────────────────────────────
+# 수치형 컬럼에 대해 IQR 방법으로 이상치 범위 계산 후 클리핑
+# (이 데이터는 실제 이상치가 없으나, 향후 데이터를 위한 범용 처리 포함)
+num_cols = [
+    "age",
+    "study_hours_per_day",
+    "grades_before_ai",
+    "grades_after_ai",
+    "daily_screen_time_hours",
+]
+
+for col in num_cols:
+    Q1    = df[col].quantile(0.25)
+    Q3    = df[col].quantile(0.75)
+    IQR   = Q3 - Q1
+    lower = Q1 - 1.5 * IQR
+    upper = Q3 + 1.5 * IQR
+    df[col] = df[col].clip(lower=lower, upper=upper)
+
+# ──────────────────────────────────────
+# 3. 인코딩
+# ──────────────────────────────────────
+df["uses_ai"]         = df["uses_ai"].map({"Yes": 1, "No": 0})
+df["education_level"] = df["education_level"].map({"school": 0, "college": 1})
+
+# ──────────────────────────────────────
+# 4. 파생변수
+# ──────────────────────────────────────
+df["grades_improvement"] = df["grades_after_ai"] - df["grades_before_ai"]
+
+# ──────────────────────────────────────
+# 5. 결과 확인
+# ──────────────────────────────────────
+print(df.head(10).to_string())
+print(f"\nShape : {df.shape}")
+print(f"\n결측치:\n{df.isnull().sum()}")
