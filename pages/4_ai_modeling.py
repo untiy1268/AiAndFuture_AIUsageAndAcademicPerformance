@@ -63,7 +63,7 @@ def load_or_create_model(name: str, registry: dict):
     if os.path.exists(filepath):
         # 저장된 모델 파일이 있으면 불러오기
         model = joblib.load(filepath)
-        st.sidebar.success(f"✅ {name}: 저장된 모델 불러옴")
+        st.sidebar.success(f"✅ {name}: 모델 불러옴")
     else:
         # 파일이 없으면 새 인스턴스 생성 (아직 학습 전 상태)
         model = info["model_class"](**info["params"])
@@ -167,11 +167,11 @@ def main():
     st.divider()
 
     # ── 사이드바: 데이터 및 모델 불러오기 ───────────────────────
-    st.sidebar.header("⚙️ 설정")
-    st.sidebar.info(
+    #st.sidebar.header("⚙️ 설정")
+    """st.sidebar.info(
         "모델 파일(.pkl)이 같은 폴더에 있으면 자동으로 불러옵니다.\n"
         "파일이 없으면 샘플 데이터로 새로 학습합니다."
-    )
+    )"""
 
     # 샘플 데이터 생성 (실제 CSV 파일로 교체 가능)
     df_raw = generate_sample_data(n=300)
