@@ -124,4 +124,149 @@ elif selected == "grouped_bar":
     st.info(f"AI를 사용한 학생들의 평균 성적은 **+{avg_change:.1f}점** 향상되었습니다. 미사용 학생 성적은 변화가 없었습니다.")
 
 # ════════════════════════════════════════════════════════════════
-# 3. Horizontal Bar — 도구별
+# 3. Horizontal Bar — 도구별 향상
+# ════════════════════════════════════════════════════════════════
+elif selected == "tool_bar":
+    tool_change = df[df["uses_ai"]=="Yes"].groupby("ai_tools_used")["grade_change"].mean().sort_values()
+    colors3 = [TOOL_COLORS.get(t, "#999") for t in tool_change.index]
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    bars = ax.barh(tool_change.index, tool_change.values, color=colors3, edgecolor="white", height=0.5)
+    ax.bar_label(bars, fmt="+%.1f점", padding=5, fontsize=11)
+    ax.set_xlabel("평균 성적 향상 (점)", fontsize=12)
+    ax.set_title("AI 도구별 평균 성적 향상 비교", fontsize=14, pad=10)
+    ax.set_xlim(0, tool_change.max() * 1.3)
+    st.pyplot(fig)
+    plt.close(fig)
+    best = tool_change.idxmax()
+    st.info(f"**{best}**를 사용한 학생의 성적 향상이 가장 컸습니다 (+{tool_change.max():.1f}점).")
+
+# ════════════════════════════════════════════════════════════════
+# 4. Bar + Scatter overlay — 목적별 향상
+# ════════════════════════════════════════════════════════════════
+elif selected == "purpose_bar":
+    purpose_df     = df[df["uses_ai"]=="Yes"].copy()
+    purpose_change = purpose_df.groupby("purpose_of_ai")["grade_change"].mean().sort_values()
+    colors4 = [PURPOSE_COLORS.get(p, "#999") for p in purpose_change.index]
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    bars = ax.bar(purpose_change.index, purpose_change.values, color=colors4, edgecolor="white", width=0.5)
+    for i, purpose in enumerate(purpose_change.index):
+        vals = purpose_df[purpose_df["purpose_of_ai"]==purpose]["grade_change"]
+        ax.scatter(np.full(len(vals), i) + np.random.uniform(-0.12, 0.12, len(vals)),
+                   vals, color="black", alpha=0.4, s=20, zorder=3)
+    ax.bar_label(bars, fmt="+%.1f점", padding=4, fontsize=11)
+    ax.set_ylabel("평균 성적 향상 (점)", fontsize=12)
+    ax.set_title("AI 활용 목적별 평균 성적 향상", fontsize=14, pad=10)
+    ax.set_ylim(0, purpose_change.max() * 1.3)
+    st.pyplot(fig)
+    plt.close(fig)
+    best = purpose_change.idxmax()
+    st.info(f"**{best}** 목적으로 AI를 활용한 학생의 성적 향상이 가장 컸습니다. 점들은 개별 학생 데이터입니다.")
+
+# ════════════════════════════════════════════════════════════════
+# 5. Scatter + 추세선
+# ════════════════════════════════════════════════════════════════
+elif selected == "scatter":
+    ai_df  = df[df["uses_ai"]=="Yes"]
+    non_df = df[df["uses_ai"]=="No"]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.scatter(non_df["study_hours_per_day"], non_df["grade_change"],
+               color=COLOR_NO,  alpha=0.6, s=60, label="AI 미사용", edgecolors="white")
+    ax.scatter(ai_df["study_hours_per_day"],  ai_df["grade_change"],
+               color=COLOR_YES, alpha=0.7, s=70, label="AI 사용",   edgecolors="white")
+    m, b = np.polyfit(ai_df["study_hours_per_day"], ai_df["grade_change"], 1)
+    x_line = np.linspace(ai_df["study_hours_per_day"].min(), ai_df["study_hours_per_day"].max(), 100)
+    ax.plot(x_line, m*x_line+b, color=COLOR_YES, linewidth=1.8, linestyle="--", alpha=0.8)
+    ax.set_xlabel("일일 공부 시간 (시간)", fontsize=12)
+    ax.set_ylabel("성적 향상 (점)", fontsize=12)
+    ax.set_title("일일 공부 시간 vs 성적 향상", fontsize=14, pad=10)
+    ax.legend(fontsize=11)
+    st.pyplot(fig)
+    plt.close(fig)
+    corr = ai_df[["study_hours_per_day","grade_change"]].corr().iloc[0,1]
+    st.info(f"AI 사용 학생 그룹에서 공부 시간과 성적 향상의 상관계수는 **{corr:.2f}**입니다.")
+
+# ════════════════════════════════════════════════════════════════
+# 6. Box Plot — 교육 수준별 (★오류 수정 완료)
+# ════════════════════════════════════════════════════════════════
+elif selected == "boxplot":
+    edu_order  = ["school", "college"]
+    edu_labels = {"school": "중·고등학교", "college": "대학교"}
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 5), sharey=True)
+    
+    for ax, edu in zip(axes, edu_order):
+        sub = df[df["education_level"] == edu]
+        
+        # 💡 빈 데이터가 생겨도 인덱스 에러가 안 나는 sns.boxplot으로 완전 대체
+        sns.boxplot(
+            data=sub,
+            x="uses_ai",
+            y="grade_change",
+            order=["No", "Yes"],
+            ax=ax,
+            palette={"No": COLOR_NO, "Yes": COLOR_YES},
+            width=0.45,
+            fliersize=4,
+            linewidth=1.5
+        )
+        
+        # 투명도 및 스타일 보정
+        for patch in ax.patches:
+            r, g, b, a = patch.get_facecolor()
+            patch.set_facecolor((r, g, b, 0.75))
+            
+        ax.set_title(edu_labels[edu], fontsize=13)
+        ax.set_xlabel("AI 사용 여부", fontsize=11)
+        ax.set_xticklabels(["AI 미사용", "AI 사용"])
+        
+        if edu == "school":
+            ax.set_ylabel("성적 향상 (점)", fontsize=11)
+        else:
+            ax.set_ylabel("")
+
+    fig.suptitle("교육 수준 × AI 사용 여부별 성적 향상 분포", fontsize=14, y=1.02)
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+    
+    # 하단 텍스트 예외 처리 강화
+    for edu in edu_order:
+        sub_ai = df[(df["education_level"] == edu) & (df["uses_ai"] == "Yes")]
+        if not sub_ai.empty:
+            m = sub_ai["grade_change"].mean()
+            st.info(f"**{edu_labels[edu]}** AI 사용 학생 평균 성적 향상: **+{m:.1f}점**")
+        else:
+            st.warning(f"**{edu_labels[edu]}** AI를 사용한 학생 데이터가 부족하여 평균을 계산할 수 없습니다.")
+
+# ════════════════════════════════════════════════════════════════
+# 7. Heatmap — 스크린타임 × 공부시간
+# ════════════════════════════════════════════════════════════════
+elif selected == "heatmap":
+    ai_heat = df[df["uses_ai"]=="Yes"].copy()
+    
+    # 💡 이상치 때문에 데이터가 버려지지 않도록 범위를 0~24시간으로 넉넉하게 조정
+    ai_heat["screen_bin"] = pd.cut(ai_heat["daily_screen_time_hours"],
+                                   bins=[0, 3, 5, 24], labels=["3시간 이하", "4~5시간", "6시간 이상"])
+    ai_heat["study_bin"]  = pd.cut(ai_heat["study_hours_per_day"],
+                                   bins=[0, 2, 4, 24], labels=["2시간 이하", "3~4시간", "5시간 이상"])
+    
+    pivot = ai_heat.pivot_table(index="screen_bin", columns="study_bin",
+                                values="grade_change", aggfunc="mean")
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    sns.heatmap(pivot, annot=True, fmt=".1f", cmap="YlOrRd",
+                linewidths=0.5, linecolor="white",
+                cbar_kws={"label": "평균 성적 향상 (점)"}, ax=ax)
+    ax.set_xlabel("일일 공부 시간", fontsize=12)
+    ax.set_ylabel("일일 스크린 타임", fontsize=12)
+    ax.set_title("스크린 타임 × 공부 시간별 성적 향상\n(AI 사용 학생)", fontsize=13, pad=10)
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+    st.info("색이 진할수록 성적 향상이 큽니다. 공부 시간이 길수록 AI 활용 효과가 더 크게 나타납니다.")
+
+st.markdown("---")
+st.caption("📌 데이터 출처: students_ai_usage.csv (n=100) | 시각화: Matplotlib · Seaborn")
