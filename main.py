@@ -4,7 +4,7 @@ import streamlit as st
 # 페이지 기본 설정
 st.set_page_config(
     page_title="데이터 분석 & AI 모델링 프로젝트",
-    page_icon="🤖",
+    page_icon="AI",
     layout="wide"
 )
 
