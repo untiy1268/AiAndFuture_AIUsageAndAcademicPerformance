@@ -77,7 +77,7 @@ def save_model(model, filepath: str):
     joblib.dump(model, filepath)
 
 
-def generate_sample_data(n: int = 300) -> pd.DataFrame:
+def generate_random_sample_data(n: int = 300) -> pd.DataFrame:
     """
     실제 데이터 파일이 없을 때 사용할 샘플 데이터를 생성한다.
     실제 서비스 시에는 이 함수 대신 CSV 파일을 로드하면 된다.
@@ -174,7 +174,7 @@ def main():
     )"""
 
     # 샘플 데이터 생성 (실제 CSV 파일로 교체 가능)
-    df_raw = generate_sample_data(n=300)
+    df_raw = pd.read_csv("students_ai_usage.csv")
 
     # 데이터 전처리 (학습용)
     feature_cols = [
