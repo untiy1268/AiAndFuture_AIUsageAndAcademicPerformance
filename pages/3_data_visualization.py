@@ -41,7 +41,7 @@ selected = chart_options[selected_label]
 st.subheader(selected_label)
 
 # ════════════════════════════════════════════════════════════════
-# 1. Donut Chart — AI 사용 비율
+# 1. Donut Chart — AI 사용 비율 (★오류 수정 완료)
 # ════════════════════════════════════════════════════════════════
 if selected == "donut":
     ai_counts = df["uses_ai"].value_counts().reset_index()
@@ -56,7 +56,12 @@ if selected == "donut":
         color="label",
         color_discrete_map={"AI 사용": COLOR_YES, "AI 미사용": COLOR_NO}
     )
-    fig.update_traces(textinfo="percent+label", textfont_size=13, textfont_properties=dict(weight="bold"))
+    # 💡 폰트 굵기 문법 수정: textfont=dict(weight="bold")로 변경
+    fig.update_traces(
+        textinfo="percent+label", 
+        textfont_size=13, 
+        textfont=dict(weight="bold")
+    )
     fig.update_layout(title={"text": "AI 사용 여부 분포 (n=100)", "x": 0.5}, showlegend=False)
     
     st.plotly_chart(fig, use_container_width=True)
@@ -139,7 +144,6 @@ elif selected == "purpose_bar":
     purpose_change = purpose_df.groupby("purpose_of_ai")["grade_change"].mean().sort_values().reset_index()
     
     fig = go.Figure()
-    # 막대 차트 추가
     fig.add_trace(go.Bar(
         x=purpose_change["purpose_of_ai"],
         y=purpose_change["grade_change"],
@@ -149,7 +153,6 @@ elif selected == "purpose_bar":
         showlegend=False
     ))
     
-    # 개별 학생 산점도(Jitter 효과 포함) overlay
     for i, purpose in enumerate(purpose_change["purpose_of_ai"]):
         vals = purpose_df[purpose_df["purpose_of_ai"] == purpose]["grade_change"]
         jitter = np.random.uniform(-0.12, 0.12, len(vals))
@@ -185,20 +188,17 @@ elif selected == "scatter":
     non_df = df[df["uses_ai"]=="No"]
     
     fig = go.Figure()
-    # AI 미사용 그룹 산점도
     fig.add_trace(go.Scatter(
         x=non_df["study_hours_per_day"], y=non_df["grade_change"],
         mode="markers", name="AI 미사용",
         marker=dict(color=COLOR_NO, size=8, opacity=0.6, line=dict(width=1, color="white"))
     ))
-    # AI 사용 그룹 산점도
     fig.add_trace(go.Scatter(
         x=ai_df["study_hours_per_day"], y=ai_df["grade_change"],
         mode="markers", name="AI 사용",
         marker=dict(color=COLOR_YES, size=10, opacity=0.7, line=dict(width=1, color="white"))
     ))
     
-    # AI 사용 그룹 추세선 계산 및 추가
     if len(ai_df) > 1:
         m, b = np.polyfit(ai_df["study_hours_per_day"], ai_df["grade_change"], 1)
         x_line = np.linspace(ai_df["study_hours_per_day"].min(), ai_df["study_hours_per_day"].max(), 100)
@@ -220,14 +220,13 @@ elif selected == "scatter":
     st.info(f"AI 사용 학생 그룹에서 공부 시간과 성적 향상의 상관계수는 **{corr:.2f}**입니다.")
 
 # ════════════════════════════════════════════════════════════════
-# 6. Box Plot — 교육 수준별 (오류 완벽 해결 및 고도화)
+# 6. Box Plot — 교육 수준별
 # ════════════════════════════════════════════════════════════════
 elif selected == "boxplot":
     box_df = df.copy()
     box_df["uses_ai_label"] = box_df["uses_ai"].map({"No": "AI 미사용", "Yes": "AI 사용"})
     box_df["edu_label"] = box_df["education_level"].map({"school": "중·고등학교", "college": "대학교"})
     
-    # px.box의 facet_col 속성을 쓰면 서브플롯을 에러 없이 한 줄로 구현 가능합니다.
     fig = px.box(
         box_df, 
         x="uses_ai_label", 
@@ -243,7 +242,6 @@ elif selected == "boxplot":
         yaxis_title="성적 향상 (점)", 
         showlegend=False
     )
-    # 서브플롯 상단 타이틀 텍스트 깔끔하게 정리 (edu_label=중·고등학교 -> 중·고등학교)
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
     fig.update_xaxes(title_text="") 
     
@@ -273,7 +271,6 @@ elif selected == "heatmap":
     pivot = ai_heat.pivot_table(index="screen_bin", columns="study_bin",
                                 values="grade_change", aggfunc="mean")
     
-    # Plotly의 px.imshow는 피벗 테이블을 받아 직관적이고 강력한 히트맵을 생성합니다.
     fig = px.imshow(
         pivot, 
         text_auto=".1f", 
