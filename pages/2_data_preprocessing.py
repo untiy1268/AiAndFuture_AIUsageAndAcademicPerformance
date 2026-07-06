@@ -10,7 +10,7 @@ st.title("⚙️ 2. 데이터 전처리")
 st.markdown("---")
 
 st.subheader("🛠️ 데이터 정제 작업")
-st.write("결측치(Null) 처리, 범주형 인코딩, 데이터 표준화 등의 실제 전처리 작업을 수행합니다.")
+st.write("결측치(Null) 처리, 이상치 처리, 범주형 인코딩, 데이터 표준화 등의 실제 전처리 작업을 수행합니다.")
 
 # 1. 파일 업로드 및 데이터 로드 인터페이스
 uploaded_file = st.file_uploader("전처리할 CSV 파일을 업로드하세요.", type=["csv"])
@@ -43,11 +43,24 @@ if df is not None:
 
     st.markdown("---")
 
+    # 학생 데이터셋의 고유 연속형 수치 컬럼 (이상치 탐지 및 표준화에 공통 사용)
+    NUMERIC_TARGET_COLS = ['age', 'study_hours_per_day', 'grades_before_ai', 'grades_after_ai', 'daily_screen_time_hours']
+
     # 2. 전처리 옵션 선택 인터페이스
     preprocessing_option = st.multiselect(
         '적용할 전처리 기법을 선택하세요 (선택 순서대로 순차 적용됩니다):',
-        ['결측치 제거 (Drop Na)', '평균값으로 결측치 채우기 (Imputation)', '원-핫 인코딩 (One-Hot Encoding)', '데이터 표준화 (Standard Scaling)']
+        ['결측치 제거 (Drop Na)', '평균값으로 결측치 채우기 (Imputation)', '이상치 처리 (Outlier Handling)',
+         '원-핫 인코딩 (One-Hot Encoding)', '데이터 표준화 (Standard Scaling)']
     )
+
+    # 이상치 처리를 선택했을 때만 세부 옵션(제거 vs 대체) 노출
+    outlier_method = None
+    if '이상치 처리 (Outlier Handling)' in preprocessing_option:
+        outlier_method = st.radio(
+            "이상치 처리 방식을 선택하세요 (IQR 기준):",
+            ['이상치 행 제거 (Remove)', '경계값으로 대체 (Capping / Winsorize)'],
+            horizontal=True
+        )
 
     if preprocessing_option:
         # 원본 데이터 복사하여 전처리 수행
@@ -100,7 +113,70 @@ if df is not None:
             else:
                 st.info("ℹ️ 결측치가 있는 컬럼이 없어 대체된 값이 없습니다.")
 
-        # [STEP 3] 원-핫 인코딩
+        # [STEP 3] 이상치 처리 (IQR 기준)
+        if '이상치 처리 (Outlier Handling)' in preprocessing_option:
+            outlier_cols = [col for col in NUMERIC_TARGET_COLS if col in processed_df.columns]
+
+            if outlier_cols:
+                outlier_info = []
+                before_rows_outlier = processed_df.shape[0]
+
+                if outlier_method == '이상치 행 제거 (Remove)':
+                    # 여러 컬럼에 대해 순차적으로 이상치 행을 제거 (마스크를 누적)
+                    mask = pd.Series(True, index=processed_df.index)
+                    for col in outlier_cols:
+                        q1 = processed_df[col].quantile(0.25)
+                        q3 = processed_df[col].quantile(0.75)
+                        iqr = q3 - q1
+                        lower_bound = q1 - 1.5 * iqr
+                        upper_bound = q3 + 1.5 * iqr
+                        col_mask = processed_df[col].between(lower_bound, upper_bound)
+                        n_outliers = int((~col_mask).sum())
+                        outlier_info.append({
+                            "컬럼명": col,
+                            "Q1": round(q1, 3),
+                            "Q3": round(q3, 3),
+                            "IQR": round(iqr, 3),
+                            "하한 경계": round(lower_bound, 3),
+                            "상한 경계": round(upper_bound, 3),
+                            "탐지된 이상치 수": n_outliers
+                        })
+                        mask &= col_mask
+                    processed_df = processed_df[mask]
+                    after_rows_outlier = processed_df.shape[0]
+                    st.success(
+                        f"🚨 **이상치 제거 완료:** 기존 {before_rows_outlier}행 ➡️ 처리 후 {after_rows_outlier}행 "
+                        f"(총 {before_rows_outlier - after_rows_outlier}행 제거됨)"
+                    )
+                else:
+                    # 경계값으로 대체 (Capping / Winsorize) — 행 손실 없이 극단값만 경계선으로 눌러줌
+                    for col in outlier_cols:
+                        q1 = processed_df[col].quantile(0.25)
+                        q3 = processed_df[col].quantile(0.75)
+                        iqr = q3 - q1
+                        lower_bound = q1 - 1.5 * iqr
+                        upper_bound = q3 + 1.5 * iqr
+                        n_outliers = int(((processed_df[col] < lower_bound) | (processed_df[col] > upper_bound)).sum())
+                        processed_df[col] = processed_df[col].clip(lower=lower_bound, upper=upper_bound)
+                        outlier_info.append({
+                            "컬럼명": col,
+                            "Q1": round(q1, 3),
+                            "Q3": round(q3, 3),
+                            "IQR": round(iqr, 3),
+                            "하한 경계": round(lower_bound, 3),
+                            "상한 경계": round(upper_bound, 3),
+                            "대체된 이상치 수": n_outliers
+                        })
+                    st.success("🚨 **이상치 대체 완료:** IQR 경계값을 벗어난 값들을 각 컬럼의 상/하한 경계값으로 대체했습니다. (행 수는 유지됩니다.)")
+
+                # 컬럼별 이상치 탐지 기준 및 처리 결과 표로 표시
+                st.write("**📌 컬럼별 이상치 처리 상세 내역 (IQR = Q3 - Q1, 경계 = Q1 - 1.5×IQR ~ Q3 + 1.5×IQR)**")
+                outlier_info_df = pd.DataFrame(outlier_info)
+                st.dataframe(outlier_info_df, use_container_width=True)
+            else:
+                st.info("ℹ️ 이상치를 탐지할 수치형 변수가 데이터에 없습니다.")
+
+        # [STEP 4] 원-핫 인코딩
         if '원-핫 인코딩 (One-Hot Encoding)' in preprocessing_option:
             cat_cols = processed_df.select_dtypes(include=['object']).columns.tolist()
             if cat_cols:
@@ -145,12 +221,10 @@ if df is not None:
             else:
                 st.info("ℹ️ 인코딩할 범주형(텍스트) 변수가 데이터에 없습니다.")
 
-        # [STEP 4] 데이터 표준화
+        # [STEP 5] 데이터 표준화
         if '데이터 표준화 (Standard Scaling)' in preprocessing_option:
-            # 학생 데이터셋의 고유 연속형 수치 컬럼 지정
-            num_cols = ['age', 'study_hours_per_day', 'grades_before_ai', 'grades_after_ai', 'daily_screen_time_hours']
             # 인코딩 등으로 컬럼이 유실되거나 변한 경우를 대비해 존재하는 컬럼만 필터링
-            num_cols = [col for col in num_cols if col in processed_df.columns]
+            num_cols = [col for col in NUMERIC_TARGET_COLS if col in processed_df.columns]
 
             if num_cols:
                 scaler = StandardScaler()
