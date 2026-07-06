@@ -4,15 +4,17 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="데이터 시각화 (Plotly)", page_icon="📈", layout="wide")
+st.set_page_config(page_title="학생 AI 사용 데이터 시각화", page_icon="📈", layout="wide")
 
-st.title("📈 3. 데이터 시각화 (EDA) — Plotly 버전")
+st.title("📈 학생 AI 활용 및 성적 향상 데이터 시각화 (EDA)")
 st.markdown("---")
 
 # ── 데이터 로드 ──────────────────────────────────────────────────
 @st.cache_data
 def load_data():
+    # 업로드하신 csv 파일명을 지정합니다.
     df = pd.read_csv("students_ai_usage.csv")
+    # 성적 변화량 계산 (도입 후 - 도입 전)
     df["grade_change"] = df["grades_after_ai"] - df["grades_before_ai"]
     return df
 
@@ -41,7 +43,7 @@ selected = chart_options[selected_label]
 st.subheader(selected_label)
 
 # ════════════════════════════════════════════════════════════════
-# 1. Donut Chart — AI 사용 비율 (★오류 수정 완료)
+# 1. Donut Chart — AI 사용 비율
 # ════════════════════════════════════════════════════════════════
 if selected == "donut":
     ai_counts = df["uses_ai"].value_counts().reset_index()
@@ -56,20 +58,26 @@ if selected == "donut":
         color="label",
         color_discrete_map={"AI 사용": COLOR_YES, "AI 미사용": COLOR_NO}
     )
-    # 💡 폰트 굵기 문법 수정: textfont=dict(weight="bold")로 변경
     fig.update_traces(
         textinfo="percent+label", 
         textfont_size=13, 
         textfont=dict(weight="bold")
     )
-    fig.update_layout(title={"text": "AI 사용 여부 분포 (n=100)", "x": 0.5}, showlegend=False)
     
+    total_students = len(df)
+    fig.update_layout(title={"text": f"AI 사용 여부 분포 (n={total_students})", "x": 0.5}, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
     
+    # 💡 안내 문구를 실제 데이터 기반으로 동적 계산하도록 수정
+    yes_count = df['uses_ai'].value_counts().get('Yes', 0)
+    no_count = df['uses_ai'].value_counts().get('No', 0)
+    yes_pct = (yes_count / total_students) * 100
+    no_pct = (no_count / total_students) * 100
+    
     st.info(
-        f"전체 학생 100명 중 AI 사용 **{df['uses_ai'].value_counts().get('Yes', 0)}명(40%)**, "
-        f"미사용 **{df['uses_ai'].value_counts().get('No', 0)}명(60%)** 입니다. "
-        "약 40%의 학생이 이미 AI를 학습에 활용하고 있습니다."
+        f"전체 학생 {total_students}명 중 AI 사용 **{yes_count}명({yes_pct:.0f}%)**, "
+        f"미사용 **{no_count}명({no_pct:.0f}%)** 입니다. "
+        f"약 {yes_pct:.0f}%의 학생이 이미 AI를 학습에 활용하고 있습니다."
     )
 
 # ════════════════════════════════════════════════════════════════
@@ -81,7 +89,7 @@ elif selected == "grouped_bar":
     
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=["AI 사용 (n=40)", "AI 미사용 (n=60)"],
+        x=[f"AI 사용 (n={len(ai_yes)})", f"AI 미사용 (n={len(ai_no)})"],
         y=[ai_yes["grades_before_ai"].mean(), ai_no["grades_before_ai"].mean()],
         name="AI 도입 전",
         marker_color="#A8C4E0",
@@ -89,7 +97,7 @@ elif selected == "grouped_bar":
         textposition="auto"
     ))
     fig.add_trace(go.Bar(
-        x=["AI 사용 (n=40)", "AI 미사용 (n=60)"],
+        x=[f"AI 사용 (n={len(ai_yes)})", f"AI 미사용 (n={len(ai_no)})"],
         y=[ai_yes["grades_after_ai"].mean(), ai_no["grades_after_ai"].mean()],
         name="AI 도입 후",
         marker_color=[COLOR_YES, COLOR_NO],
@@ -103,11 +111,14 @@ elif selected == "grouped_bar":
         yaxis_title="평균 성적", 
         yaxis_range=[0, 100]
     )
-    
     st.plotly_chart(fig, use_container_width=True)
     
-    avg_change = ai_yes["grade_change"].mean()
-    st.info(f"AI를 사용한 학생들의 평균 성적은 **+{avg_change:.1f}점** 향상되었습니다. 미사용 학생 성적은 변화가 없었습니다.")
+    avg_change_yes = ai_yes["grade_change"].mean()
+    avg_change_no = ai_no["grade_change"].mean()
+    st.info(
+        f"AI를 사용한 학생들의 평균 성적은 **+{avg_change_yes:.1f}점** 향상되었습니다. "
+        f"반면 미사용 학생의 성적 변화는 평균 **+{avg_change_no:.1f}점** 이었습니다."
+    )
 
 # ════════════════════════════════════════════════════════════════
 # 3. Horizontal Bar — 도구별 향상
@@ -130,11 +141,11 @@ elif selected == "tool_bar":
         yaxis_title="", 
         showlegend=False
     )
-    
     st.plotly_chart(fig, use_container_width=True)
     
     best = tool_change.loc[tool_change["grade_change"].idxmax(), "ai_tools_used"]
-    st.info(f"**{best}**를 사용한 학생의 성적 향상이 가장 컸습니다 (+{tool_change['grade_change'].max():.1f}점).")
+    max_val = tool_change["grade_change"].max()
+    st.info(f"**{best}**를 사용한 학생의 성적 향상이 가장 컸습니다 (+{max_val:.1f}점).")
 
 # ════════════════════════════════════════════════════════════════
 # 4. Bar + Scatter overlay — 목적별 향상
@@ -174,11 +185,10 @@ elif selected == "purpose_bar":
             ticktext=purpose_change["purpose_of_ai"]
         )
     )
-    
     st.plotly_chart(fig, use_container_width=True)
     
     best = purpose_change.loc[purpose_change["grade_change"].idxmax(), "purpose_of_ai"]
-    st.info(f"**{best}** 목적으로 AI를 활용한 학생의 성적 향상이 가장 컸습니다. 점들은 개별 학생 데이터입니다.")
+    st.info(f"**{best}** 목적으로 AI를 활용한 학생의 성적 향상이 가장 컸습니다. 차트의 검은 점들은 개별 학생 데이터입니다.")
 
 # ════════════════════════════════════════════════════════════════
 # 5. Scatter + 추세선
@@ -213,11 +223,10 @@ elif selected == "scatter":
         xaxis_title="일일 공부 시간 (시간)", 
         yaxis_title="성적 향상 (점)"
     )
-    
     st.plotly_chart(fig, use_container_width=True)
     
     corr = ai_df[["study_hours_per_day","grade_change"]].corr().iloc[0,1]
-    st.info(f"AI 사용 학생 그룹에서 공부 시간과 성적 향상의 상관계수는 **{corr:.2f}**입니다.")
+    st.info(f"AI 사용 학생 그룹에서 '공부 시간'과 '성적 향상'의 상관계수는 **{corr:.2f}**입니다.")
 
 # ════════════════════════════════════════════════════════════════
 # 6. Box Plot — 교육 수준별
@@ -244,7 +253,6 @@ elif selected == "boxplot":
     )
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
     fig.update_xaxes(title_text="") 
-    
     st.plotly_chart(fig, use_container_width=True)
     
     edu_order  = ["school", "college"]
@@ -253,9 +261,9 @@ elif selected == "boxplot":
         sub_ai = df[(df["education_level"] == edu) & (df["uses_ai"] == "Yes")]
         if not sub_ai.empty:
             m = sub_ai["grade_change"].mean()
-            st.info(f"**{edu_labels[edu]}** AI 사용 학생 평균 성적 향상: **+{m:.1f}점**")
+            st.info(f"**{edu_labels[edu]}**의 AI 사용 학생 평균 성적 향상: **+{m:.1f}점**")
         else:
-            st.warning(f"**{edu_labels[edu]}** AI를 사용한 학생 데이터가 부족합니다.")
+            st.warning(f"**{edu_labels[edu]}**의 AI 사용 학생 데이터가 부족합니다.")
 
 # ════════════════════════════════════════════════════════════════
 # 7. Heatmap — 스크린타임 × 공부시간
@@ -277,11 +285,10 @@ elif selected == "heatmap":
         color_continuous_scale="YlOrRd",
         labels=dict(x="일일 공부 시간", y="일일 스크린 타임", color="평균 성적 향상")
     )
-    fig.update_layout(title={"text": "스크린 타임 × 공부 시간별 성적 향상<br><sup>(AI 사용 학생)</sup>", "x": 0.5})
-    
+    fig.update_layout(title={"text": "스크린 타임 × 공부 시간별 성적 향상<br><sup>(AI 사용 학생 대상)</sup>", "x": 0.5})
     st.plotly_chart(fig, use_container_width=True)
     
-    st.info("색이 진할수록 성적 향상이 큽니다. 공부 시간이 길수록 AI 활용 효과가 더 크게 나타납니다.")
+    st.info("색이 진할수록 평균 성적 향상 폭이 큽니다. 데이터에 따르면 일일 공부 시간이 길수록 AI 활용 효과가 더 잘 나타나는 경향이 있습니다.")
 
 st.markdown("---")
-st.caption("📌 데이터 출처: students_ai_usage.csv (n=100) | 시각화: Plotly")
+st.caption(f"📌 데이터 출처: students_ai_usage.csv (총 샘플 수: {len(df)}개) | 시각화 도구: Plotly")
