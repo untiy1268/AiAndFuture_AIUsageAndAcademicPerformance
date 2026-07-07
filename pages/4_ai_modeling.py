@@ -3,8 +3,8 @@
 # 목적: 학생의 AI 사용 및 학습 데이터를 기반으로
 #       AI 사용 후 성적(grades_after_ai)을 예측한다
 # 사용 모델: Linear Regression, Random Forest Regressor
-# 데이터: students_ai_usage.csv       (전처리 전 원본 데이터, 100행)
-#         preprocessed_sau_data.csv   (전처리 후 원-핫 인코딩 데이터, 100행)
+# 데이터: students_ai_usage.csv         (전처리 전 원본 데이터, 100행)
+#         cleaned_student_ai_data.csv   (전처리 후 정제 데이터, 100행)
 # 특징: 두 데이터셋으로 각각 모델을 학습하여 성능을 비교한다
 # ============================================================
 
@@ -33,14 +33,15 @@ DATASETS = {
         "color": "#4C9BE8",
     },
     "전처리 후": {
-        "path":  "preprocessed_sau_data.csv",
+        "path":  "cleaned_student_ai_data.csv",
         "color": "#E8714C",
     },
 }
 
-# 전처리 전 데이터는 문자열 카테고리를 포함하므로,
-# 모델 학습이 가능하도록 최소한의 순서형(ordinal) 인코딩만 적용한다.
-# (전처리 후 데이터는 이미 원-핫 인코딩이 되어 있어 그대로 사용)
+# 두 데이터 모두 문자열 카테고리를 포함하므로,
+# 모델 학습이 가능하도록 최소한의 순서형(ordinal) 인코딩을 적용한다.
+# - 전처리 전(students_ai_usage.csv): uses_ai 컬럼 포함, 8개 피처
+# - 전처리 후(cleaned_student_ai_data.csv): uses_ai 컬럼이 제거된 정제본, 7개 피처
 RAW_CATEGORY_MAPS = {
     "education_level": {"school": 0, "college": 1},
     "uses_ai":         {"No": 0,     "Yes": 1},
@@ -48,8 +49,19 @@ RAW_CATEGORY_MAPS = {
     "purpose_of_ai":   {"None": 0, "Coding": 1,  "Homework": 2, "Research": 3},
 }
 
+AFTER_CATEGORY_MAPS = {
+    "education_level": {"school": 0, "college": 1},
+    "ai_tools_used":   {"None": 0, "ChatGPT": 1, "Copilot": 2, "Gemini": 3},
+    "purpose_of_ai":   {"None": 0, "Coding": 1,  "Homework": 2, "Research": 3},
+}
+
 RAW_FEATURE_COLS = [
     "age", "education_level", "study_hours_per_day", "uses_ai",
+    "ai_tools_used", "purpose_of_ai", "grades_before_ai", "daily_screen_time_hours",
+]
+
+AFTER_FEATURE_COLS = [
+    "age", "education_level", "study_hours_per_day",
     "ai_tools_used", "purpose_of_ai", "grades_before_ai", "daily_screen_time_hours",
 ]
 
@@ -86,8 +98,11 @@ def load_raw_csv(filepath: str) -> pd.DataFrame:
 
 
 @st.cache_data
-def load_processed_csv(filepath: str) -> pd.DataFrame:
-    return pd.read_csv(filepath)
+def load_after_csv(filepath: str) -> pd.DataFrame:
+    df = pd.read_csv(filepath)
+    df["ai_tools_used"] = df["ai_tools_used"].fillna("None")
+    df["purpose_of_ai"] = df["purpose_of_ai"].fillna("None")
+    return df
 
 
 def encode_raw_ordinal(df: pd.DataFrame) -> pd.DataFrame:
@@ -98,13 +113,20 @@ def encode_raw_ordinal(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def encode_after_ordinal(df: pd.DataFrame) -> pd.DataFrame:
+    """전처리 후(cleaned) 데이터를 학습 가능하도록 최소 순서형 인코딩 (uses_ai 컬럼 없음)"""
+    df = df.copy()
+    for col, mapping in AFTER_CATEGORY_MAPS.items():
+        df[col] = df[col].map(mapping).fillna(0).astype(int)
+    return df
+
+
 def encode_user_input_after(user_raw: pd.DataFrame, after_feature_cols: list) -> pd.DataFrame:
-    """전처리 후(원-핫) 모델에 넣기 위해 사용자 입력을 동일한 방식으로 인코딩"""
-    dummies = pd.get_dummies(
-        user_raw,
-        columns=["education_level", "uses_ai", "ai_tools_used", "purpose_of_ai"],
-    )
-    return dummies.reindex(columns=after_feature_cols, fill_value=0)
+    """전처리 후 모델에 넣기 위해 사용자 입력을 동일한 방식(순서형 인코딩)으로 변환"""
+    df = user_raw.drop(columns=["uses_ai"], errors="ignore").copy()
+    for col, mapping in AFTER_CATEGORY_MAPS.items():
+        df[col] = df[col].map(mapping).fillna(0).astype(int)
+    return df.reindex(columns=after_feature_cols, fill_value=0)
 
 
 def get_model_filename(dataset_key: str, model_name: str) -> str:
@@ -260,28 +282,44 @@ def plot_performance_comparison(all_results: dict) -> go.Figure:
 def main():
     st.set_page_config(page_title="AI 성적 예측기", page_icon="🎓", layout="wide")
 
+    # ── 칼럼명(헤더) 글씨 크기 키우기 ───────────────────────────
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stDataFrame"] thead tr th {
+            font-size: 20px !important;
+            font-weight: 700 !important;
+        }
+        div[data-testid="stElementToolbar"] + div thead tr th {
+            font-size: 20px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("🎓 AI 사용 후 성적 예측 웹앱")
     st.markdown(
         "**전처리 전 데이터(students_ai_usage.csv)** 와 "
-        "**전처리 후 데이터(preprocessed_sau_data.csv)** 로 각각 모델을 학습하여 "
+        "**전처리 후 데이터(cleaned_student_ai_data.csv)** 로 각각 모델을 학습하여 "
         "성능 차이를 비교합니다."
     )
     st.divider()
 
     # ── 데이터 로드 ───────────────────────────────────────────
-    raw_path       = DATASETS["전처리 전"]["path"]
-    processed_path = DATASETS["전처리 후"]["path"]
+    raw_path   = DATASETS["전처리 전"]["path"]
+    after_path = DATASETS["전처리 후"]["path"]
 
-    for p in (raw_path, processed_path):
+    for p in (raw_path, after_path):
         if not os.path.exists(p):
             st.error(f"❌ '{p}' 파일을 찾을 수 없습니다. 앱과 같은 폴더에 파일을 넣어주세요.")
             st.stop()
 
-    df_raw_original  = load_raw_csv(raw_path)          # 전처리 전 원본 (문자열 카테고리 포함)
+    df_raw_original  = load_raw_csv(raw_path)               # 전처리 전 원본 (문자열 카테고리 포함)
     df_raw_encoded   = encode_raw_ordinal(df_raw_original)  # 학습용 최소 인코딩
-    df_processed     = load_processed_csv(processed_path)   # 전처리 후 (원-핫)
 
-    AFTER_FEATURE_COLS = [c for c in df_processed.columns if c != TARGET_COL]
+    df_after_original = load_after_csv(after_path)                  # 전처리 후 원본 (uses_ai 컬럼 제거된 정제 데이터)
+    df_after_encoded  = encode_after_ordinal(df_after_original)     # 학습용 최소 인코딩
 
     FEATURE_COLS_BY_DATASET = {
         "전처리 전": RAW_FEATURE_COLS,
@@ -289,7 +327,7 @@ def main():
     }
     DATA_BY_DATASET = {
         "전처리 전": df_raw_encoded,
-        "전처리 후": df_processed,
+        "전처리 후": df_after_encoded,
     }
 
     # ── 모델 학습/평가 (데이터셋 × 모델 조합) ───────────────────
@@ -338,8 +376,9 @@ def main():
             "💡 두 데이터셋 모두 동일한 100개 행(같은 학생, 같은 순서)에서 "
             "동일한 `random_state=42`로 분할했기 때문에, 테스트셋에 포함된 학생이 "
             "동일하여 공정하게 비교할 수 있습니다. "
-            "'전처리 전'은 카테고리를 숫자로만 바꾼 순서형 인코딩, "
-            "'전처리 후'는 원-핫 인코딩을 사용합니다."
+            "두 데이터 모두 카테고리를 숫자로 바꾼 순서형 인코딩을 사용하며, "
+            "'전처리 후'(cleaned_student_ai_data.csv)는 중복 정보였던 `uses_ai` 컬럼이 "
+            "제거되어 특성이 7개(전처리 전은 8개)입니다."
         )
 
     # ============================================================
@@ -494,9 +533,9 @@ def main():
         st.dataframe(df_raw_original.head(10), use_container_width=True)
         st.caption(f"{df_raw_original.shape[0]}행 × {df_raw_original.shape[1]}열")
 
-        st.markdown("**전처리 후 데이터 (preprocessed_sau_data.csv)**")
-        st.dataframe(df_processed.head(10), use_container_width=True)
-        st.caption(f"{df_processed.shape[0]}행 × {df_processed.shape[1]}열")
+        st.markdown("**전처리 후 데이터 (cleaned_student_ai_data.csv)**")
+        st.dataframe(df_after_original.head(10), use_container_width=True)
+        st.caption(f"{df_after_original.shape[0]}행 × {df_after_original.shape[1]}열")
 
 
 if __name__ == "__main__":
