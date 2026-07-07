@@ -10,7 +10,7 @@ st.set_page_config(page_title="데이터 전처리", page_icon="⚙️", layout=
 st.title("⚙️ 2. 데이터 전처리 (고정 파이프라인)")
 st.markdown("---")
 
-# 파일 업로드 컴포넌트를 제거하고, 기존 지정된 csv 파일을 자동으로 불러옵니다.
+# 파일 업로드 컴포넌트 없이 지정된 csv 파일을 자동으로 불러옵니다.
 csv_filename = "students_ai_usage.csv"
 
 if os.path.exists(csv_filename):
@@ -95,14 +95,17 @@ if os.path.exists(csv_filename):
             st.metric(label="전체 데이터 수", value=f"{original_df.shape[0]} 행")
             st.metric(label="변수(컬럼) 수", value=f"{original_df.shape[1]} 개")
             
-            # 원본 결측치 세부 존재 컬럼 리스트업
+            # 원본 데이터의 전체 9개 컬럼 결측치 현황 출력 (수정된 핵심 영역)
+            st.write("**📌 전체 컬럼별 결측치 현황 (9개 전체)**")
             null_series = original_df.isnull().sum()
-            if null_series.sum() > 0:
-                st.warning("⚠️ 결측치가 존재하는 컬럼 상세 내역:")
-                null_df = pd.DataFrame({"결측치 개수": null_series[null_series > 0]})
-                st.dataframe(null_df, use_container_width=True)
-            else:
-                st.success("✅ 원본 데이터에 결측치가 없습니다.")
+            null_df = pd.DataFrame({
+                "데이터 타입": original_df.dtypes.astype(str),
+                "결측치 개수": null_series
+            })
+            st.dataframe(null_df, use_container_width=True)
+            
+            if null_series.sum() == 0:
+                st.success("✅ 원본 데이터에 결측치가 완전히 비어있는 청정 상태입니다.")
 
     # Tab 2: 특정 전처리 적용 데이터 미리보기 (uses_ai 삭제 / ai_tools_used 대체)
     with tab2:
@@ -149,10 +152,8 @@ if os.path.exists(csv_filename):
             available_num_cols = [c for c in NUMERIC_TARGET_COLS if c in outlier_removed_df.columns]
             
             if available_num_cols:
-                # 사용자가 보고 싶은 변수 선택
                 selected_box_col = st.selectbox("확인할 수치형 변수를 선택하세요:", available_num_cols)
                 
-                # 전/후 데이터 취합 및 라벨링을 통한 멀티 박스플롯 생성
                 df_before = processed_base_df[[selected_box_col]].copy()
                 df_before['상태'] = '이상치 처리 전'
                 
@@ -161,7 +162,6 @@ if os.path.exists(csv_filename):
                 
                 compare_df = pd.concat([df_before, df_after], axis=0)
                 
-                # points=False 옵션으로 점들을 완벽히 지우고 깔끔한 박스 선만 표시
                 fig = px.box(
                     compare_df, 
                     x='상태',
