@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import streamlit as st
+import plotly.express as px
 from sklearn.preprocessing import StandardScaler
 
 # 페이지 설정
@@ -9,11 +10,9 @@ st.set_page_config(page_title="데이터 전처리", page_icon="⚙️", layout=
 st.title("⚙️ 2. 데이터 전처리 (고정 파이프라인)")
 st.markdown("---")
 
-st.subheader("🛠️ 데이터 정제 작업 결과")
-st.write("업로드된 데이터로부터 결측치 제거 및 IQR 기준 이상치 제거를 순차적으로 수행한 독립된 데이터셋들을 비교합니다.")
-
 # 1. 파일 업로드 및 데이터 로드 인터페이스
-uploaded_file = st.file_uploader("전처리할 CSV 파일을 업로드하세요.", type=["csv"])
+# 안내 문구를 라벨로 깔끔하게 처리하고, 내부 자동 생성 문구(200MB...)는 간결하게 유지되도록 구성
+uploaded_file = st.file_uploader("📂 전처리할 CSV 파일을 선택하여 업로드하세요.", type=["csv"])
 
 df = None
 if uploaded_file is not None:
@@ -24,7 +23,7 @@ elif os.path.exists("students_ai_usage.csv"):
 
 # 데이터가 성공적으로 로드된 경우에만 이후 로직 실행
 if df is not None:
-    # 학생 데이터셋의 고유 연속형 수치 컬럼 (이상치 탐지에 사용)
+    # 학생 데이터셋의 고유 연속형 수치 컬럼 (이상치 탐지 및 박스플롯용)
     NUMERIC_TARGET_COLS = ['age', 'study_hours_per_day', 'grades_before_ai', 'grades_after_ai', 'daily_screen_time_hours']
 
     # ----------------------------------------------------
@@ -34,11 +33,26 @@ if df is not None:
     # [데이터 1] 순수 원본 데이터 복사
     original_df = df.copy()
     
-    # [데이터 2] 결측치 제거 변환
-    dropna_df = original_df.dropna()
+    # [데이터 2] 특정 전처리 적용 (AI 사용 여부 삭제 & 비어있는 AI 도구명 'None' 대체)
+    processed_base_df = original_df.copy()
     
-    # [데이터 3] 결측치 제거 상태에서 이상치(행 제거) 추가 변환
-    outlier_removed_df = dropna_df.copy()
+    # 1. AI 사용 여부(uses_ai) 컬럼 삭제 (존재할 경우)
+    if 'uses_ai' in processed_base_df.columns:
+        processed_base_df = processed_base_df.drop(columns=['uses_ai'])
+        
+    # 2. 사용한 AI(ai_tools_used) 컬럼이 비어있으면 'None'으로 대체
+    if 'ai_tools_used' in processed_base_df.columns:
+        processed_base_df['ai_tools_used'] = processed_base_df['ai_tools_used'].fillna('None')
+    
+    # 수치형 결측치도 안전하게 처리하기 위해 평균값 대체 추가
+    for col in processed_base_df.columns:
+        if processed_base_df[col].dtype in ['int64', 'float64']:
+            processed_base_df[col] = processed_base_df[col].fillna(processed_base_df[col].mean())
+        else:
+            processed_base_df[col] = processed_base_df[col].fillna('None')
+
+    # [데이터 3] 결측치/변수 정제 상태에서 이상치(행 제거) 추가 변환
+    outlier_removed_df = processed_base_df.copy()
     outlier_info = []
     
     mask = pd.Series(True, index=outlier_removed_df.index)
@@ -71,11 +85,11 @@ if df is not None:
     
     st.write("### 📊 단계별 데이터 정제 비교 모니터링")
     
-    # 탭 메뉴를 구성하여 사용자가 각 상태별 데이터를 완전히 따로 볼 수 있게 구성
+    # 탭 메뉴 구성
     tab1, tab2, tab3 = st.tabs([
         "① 순수 원본 데이터 (Original)", 
-        "② 결측치 제거 데이터 (Drop NA)", 
-        "③ 이상치 제거 데이터 (Outlier Removed)"
+        "② 결측치 처리 및 변수 정제 (Cleaned Base)", 
+        "③ 이상치 제거 및 시각화 (Outlier Removed)"
     ])
     
     # Tab 1: 순수 원본 데이터 요약 및 미리보기
@@ -88,45 +102,70 @@ if df is not None:
             st.write("##### 📋 데이터 요약")
             st.metric(label="전체 데이터 수", value=f"{original_df.shape[0]} 행")
             st.metric(label="변수(컬럼) 수", value=f"{original_df.shape[1]} 개")
-            null_sum = original_df.isnull().sum().sum()
-            if null_sum > 0:
-                st.warning(f"⚠️ 총 {null_sum}개의 결측치가 감지되었습니다.")
+            
+            # 원본 결측치 세부 요약
+            null_counts = original_df.isnull().sum()
+            if null_counts.sum() > 0:
+                st.warning(f"⚠️ 결측치 존재 컬럼:\n{null_counts[null_counts > 0]}")
             else:
-                st.success("✅ 데이터에 결측치가 없습니다.")
+                st.success("✅ 원본 데이터에 결측치가 없습니다.")
 
-    # Tab 2: 결측치만 제거한 데이터 미리보기
+    # Tab 2: 특정 전처리 적용 데이터 미리보기 (uses_ai 삭제 / ai_tools_used 대체)
     with tab2:
         col_d1, col_d2 = st.columns([2, 1])
         with col_d1:
-            st.write("##### 🧹 결측치 행 제거 완료 데이터 (상위 10개 행)")
-            st.dataframe(dropna_df.head(10))
+            st.write("##### 🧹 `uses_ai` 삭제 및 비어있는 AI 도구 `'None'` 대체 데이터 (상위 10개 행)")
+            st.dataframe(processed_base_df.head(10))
         with col_d2:
             st.write("##### 📊 정제 결과 및 변경점")
             st.metric(
-                label="최종 행 개수", 
-                value=dropna_df.shape[0], 
-                delta=int(dropna_df.shape[0] - original_df.shape[0])
+                label="최종 변수(열) 개수", 
+                value=processed_base_df.shape[1], 
+                delta=int(processed_base_df.shape[1] - original_df.shape[1])
             )
-            st.caption("※ 결측치(NaN)가 하나라도 포함된 행이 목록에서 삭제되었습니다.")
+            st.markdown("""
+            - **`uses_ai`** 변수가 데이터셋에서 제거되었습니다.
+            - **`ai_tools_used`** 컬럼 내 비어있던 칸(NaN)이 전부 **`'None'`**으로 변경되었습니다.
+            """)
 
-    # Tab 3: 이상치까지 제거한 데이터 미리보기
+    # Tab 3: 이상치까지 제거한 데이터 미리보기 + 박스플롯 그래프
     with tab3:
-        col_out1, col_out2 = st.columns([2, 1])
-        with col_out1:
-            st.write("##### 🚨 IQR 기준 이상치 제거 완료 데이터 (상위 10개 행)")
-            st.dataframe(outlier_removed_df.head(10))
-            
-            # 이상치 파단 기준 상세 표
+        st.write("##### 🚨 IQR 기준 이상치 정제 데이터 (상위 10개 행)")
+        st.dataframe(outlier_removed_df.head(10))
+        
+        st.markdown("---")
+        
+        # 레이아웃 분할 (왼쪽: 수치 표, 오른쪽: 박스플롯)
+        col_graph1, col_graph2 = st.columns([1, 1])
+        
+        with col_graph1:
             st.write("**📌 수치형 변수별 IQR 이상치 탐지 상세 내역**")
             st.dataframe(pd.DataFrame(outlier_info), use_container_width=True)
-        with col_out2:
-            st.write("##### 📊 정제 결과 및 변경점")
+            
+            # 변동 행 개수 메트릭
             st.metric(
-                label="최종 행 개수", 
+                label="이상치 제거 후 최종 행 개수", 
                 value=outlier_removed_df.shape[0], 
                 delta=int(outlier_removed_df.shape[0] - original_df.shape[0])
             )
-            st.caption("※ 각 수치형 컬럼별로 [Q1 - 1.5*IQR] 미만이거나 [Q3 + 1.5*IQR] 초과인 극단치 행이 누적 제거되었습니다.")
+            
+        with col_graph2:
+            st.write("**📊 이상치 정제 후 데이터 박스플롯(Boxplot) 분포**")
+            available_num_cols = [c for c in NUMERIC_TARGET_COLS if c in outlier_removed_df.columns]
+            
+            if available_num_cols:
+                selected_box_col = st.selectbox("확인할 수치형 변수를 선택하세요:", available_num_cols)
+                
+                fig = px.box(
+                    outlier_removed_df, 
+                    y=selected_box_col, 
+                    points="all", 
+                    title=f"[{selected_box_col}] 이상치 처리 후 분포 상태",
+                    color_discrete_sequence=['#FF4B4B']
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("시각화할 수치형 변수가 없습니다.")
 
     st.markdown("---")
     
@@ -134,14 +173,13 @@ if df is not None:
     # 최종 정제 데이터 다운로드 영역
     # ----------------------------------------------------
     st.write("### 📥 최종 정제 완료 데이터 다운로드")
-    st.info("결측치와 이상치가 모두 깔끔하게 처리된 최종 데이터셋을 다운로드할 수 있습니다.")
+    st.info("결측치 정제, 변수 제거, 이상치 행 제거가 모두 끝난 최종 데이터셋입니다.")
     
-    # 최종 완성 데이터 내보내기용 바이트 변환
     csv_data = outlier_removed_df.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="📥 전처리(결측치+이상치 제거) 완료 CSV 다운로드",
+        label="📥 전처리 완료 CSV 다운로드",
         data=csv_data,
-        file_name="cleaned_student_data.csv",
+        file_name="cleaned_student_ai_data.csv",
         mime="text/csv",
         use_container_width=True
     )
