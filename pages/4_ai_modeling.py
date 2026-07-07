@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-import joblib
 
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
@@ -11,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.dummy import DummyRegressor
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -49,11 +48,13 @@ def load_dataset():
     df = pd.read_csv("cleaned_student_ai_data.csv")
 
     # 결측치 처리 및 완벽한 타입 캐스팅 안전장치
+    # ⚠️ pandas 2.x 이상에서는 문자열 컬럼이 'object'가 아닌 'str'/'string' dtype으로
+    # 표시될 수 있으므로, is_numeric_dtype으로 "숫자가 아니면 범주형"으로 판단한다.
     for col in df.columns:
-        if df[col].dtype == 'object':
-            df[col] = df[col].fillna("None").astype(str)
-        else:
+        if pd.api.types.is_numeric_dtype(df[col]):
             df[col] = df[col].fillna(0)
+        else:
+            df[col] = df[col].fillna("None").astype(str)
 
     return df
 
@@ -107,16 +108,16 @@ MODEL_REGISTRY = {
     }
 }
 
-def get_model_filename(dk: str, mn: str):
-    clean_name = mn.lower().replace(" ", "_")
-    return f"pipeline_{dk}_{clean_name}.joblib"
-
+@st.cache_resource(show_spinner="모델을 학습하는 중입니다...")
 def train_and_cache_pipelines(dataset_key: str, _df, feature_cols, target_col):
     # 1. 안전한 연산을 위해 독립된 데이터프레임 복사본 생성
     _df = _df.copy()
 
-    # 2. 카테고리형(object) 변수와 수치형 변수 자동 식별
-    cat_cols = [c for c in feature_cols if _df[c].dtype == 'object']
+    # 2. 카테고리형 변수와 수치형 변수 자동 식별
+    # ⚠️ pandas 2.x 이상에서는 문자열 컬럼의 dtype이 'object'가 아니라 'str'/'string'으로
+    # 표시될 수 있어 dtype == 'object' 비교만으로는 범주형 컬럼을 놓칠 수 있다.
+    # is_numeric_dtype으로 "숫자가 아니면 범주형"으로 판단해야 pandas 버전에 관계없이 안전하다.
+    cat_cols = [c for c in feature_cols if not pd.api.types.is_numeric_dtype(_df[c])]
     num_cols = [c for c in feature_cols if c not in cat_cols]
 
     # 범주형 컬럼 내에 숨어있을 수 있는 숫자형/Float 요소를 완전히 str로 직렬화
@@ -151,30 +152,31 @@ def train_and_cache_pipelines(dataset_key: str, _df, feature_cols, target_col):
     baseline_pipeline.fit(X_train, y_train)
     b_preds = baseline_pipeline.predict(X_test)
     baseline_metrics = {
+        "MSE": mean_squared_error(y_test, b_preds),
         "RMSE": np.sqrt(mean_squared_error(y_test, b_preds)),
+        "MAE": mean_absolute_error(y_test, b_preds),
         "R2": r2_score(y_test, b_preds)
     }
 
     # 2. 메인 예측 모델 파이프라인 학습 루프
+    # 💡 st.cache_resource가 코드/데이터 변경 시 캐시를 자동으로 무효화해주므로,
+    # 예전처럼 디스크에 joblib 파일로 저장해두고 재사용하지 않는다.
+    # (스키마가 바뀐 뒤에도 예전 파일을 그대로 불러오는 게 실시간 예측 오류의 원인이었다.)
     for model_name, info in MODEL_REGISTRY.items():
-        filepath = get_model_filename(dataset_key, model_name)
-
-        if os.path.exists(filepath):
-            pipeline = joblib.load(filepath)
-        else:
-            pipeline = Pipeline(steps=[
-                ('preprocessor', preprocessor),
-                ('regressor', info["model_class"](**info["params"]))
-            ])
-            pipeline.fit(X_train, y_train)
-            joblib.dump(pipeline, filepath)
+        pipeline = Pipeline(steps=[
+            ('preprocessor', preprocessor),
+            ('regressor', info["model_class"](**info["params"]))
+        ])
+        pipeline.fit(X_train, y_train)
 
         preds = pipeline.predict(X_test)
-        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        mse = mean_squared_error(y_test, preds)
+        rmse = np.sqrt(mse)
+        mae = mean_absolute_error(y_test, preds)
         r2 = r2_score(y_test, preds)
 
         trained_pipelines[model_name] = pipeline
-        results[model_name] = {"RMSE": rmse, "R2": r2, "preds": preds}
+        results[model_name] = {"MSE": mse, "RMSE": rmse, "MAE": mae, "R2": r2, "preds": preds}
 
     return trained_pipelines, results, y_test, cat_cols, num_cols, baseline_metrics
 
@@ -196,7 +198,7 @@ with tabs[0]:
     col2.metric("사용된 예측 피처 수", f"{len(feature_cols)} 개")
     col3.metric("AI 도입 전 평균 성적", f"{df_active['grades_before_ai'].mean():.1f} 점")
 
-    st.dataframe(df_active.head(10), use_container_width=True)
+    st.dataframe(df_active.head(10), width='stretch')
 
     st.subheader("📊 주요 변수별 분포 시각화")
     c1, c2 = st.columns(2)
@@ -210,7 +212,7 @@ with tabs[0]:
             template="plotly_white"
         )
         fig_hist.update_layout(margin=dict(l=40, r=40, t=50, b=40))
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, width='stretch')
 
     with c2:
         fig_box = px.box(
@@ -220,7 +222,7 @@ with tabs[0]:
             template="plotly_white"
         )
         fig_box.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
-        st.plotly_chart(fig_box, use_container_width=True)
+        st.plotly_chart(fig_box, width='stretch')
 
     st.markdown("---")
     st.subheader("🔗 학습 시간 vs 성적 변화 상관관계")
@@ -232,7 +234,7 @@ with tabs[0]:
         template="plotly_white"
     )
     fig_scatter_study.update_layout(margin=dict(l=40, r=40, t=50, b=40))
-    st.plotly_chart(fig_scatter_study, use_container_width=True)
+    st.plotly_chart(fig_scatter_study, width='stretch')
 
 # --- Tab 2: 모델 성능 및 분석 ---
 with tabs[1]:
@@ -240,9 +242,13 @@ with tabs[1]:
 
     st.markdown("#### 🏁 기준선(Baseline) 대비 모델 성능 비교")
 
-    metric_rows = [{"모델": "Baseline (평균값 예측)", "RMSE": baseline_metrics["RMSE"], "R2": baseline_metrics["R2"]}]
+    metric_rows = [{
+        "모델": "Baseline (평균값 예측)",
+        "MSE": baseline_metrics["MSE"], "RMSE": baseline_metrics["RMSE"],
+        "MAE": baseline_metrics["MAE"], "R2": baseline_metrics["R2"]
+    }]
     for model_name, res in evaluation_results.items():
-        metric_rows.append({"모델": model_name, "RMSE": res["RMSE"], "R2": res["R2"]})
+        metric_rows.append({"모델": model_name, "MSE": res["MSE"], "RMSE": res["RMSE"], "MAE": res["MAE"], "R2": res["R2"]})
     metric_df = pd.DataFrame(metric_rows)
 
     metric_cols = st.columns(len(metric_df))
@@ -251,9 +257,31 @@ with tabs[1]:
             st.metric(row["모델"], f"R² {row['R2']:.3f}", f"RMSE {row['RMSE']:.2f}")
 
     st.dataframe(
-        metric_df.style.format({"RMSE": "{:.2f}", "R2": "{:.3f}"}),
-        use_container_width=True
+        metric_df.style.format({"MSE": "{:.2f}", "RMSE": "{:.2f}", "MAE": "{:.2f}", "R2": "{:.3f}"}),
+        width='stretch'
     )
+
+    st.caption("MSE·RMSE·MAE는 낮을수록, R²는 1에 가까울수록 예측이 정확하다는 의미입니다.")
+
+    m1, m2 = st.columns(2)
+    with m1:
+        fig_mse = px.bar(
+            metric_df, x="모델", y="MSE", color="모델",
+            title="📉 모델별 MSE 비교 (낮을수록 좋음)",
+            color_discrete_sequence=[COLOR_BASELINE, COLOR_SECOND, COLOR_MAIN],
+            template="plotly_white"
+        )
+        fig_mse.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
+        st.plotly_chart(fig_mse, width='stretch')
+    with m2:
+        fig_mae = px.bar(
+            metric_df, x="모델", y="MAE", color="모델",
+            title="📉 모델별 MAE 비교 (낮을수록 좋음)",
+            color_discrete_sequence=[COLOR_BASELINE, COLOR_SECOND, COLOR_MAIN],
+            template="plotly_white"
+        )
+        fig_mae.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
+        st.plotly_chart(fig_mae, width='stretch')
 
     c1, c2 = st.columns(2)
     with c1:
@@ -264,7 +292,7 @@ with tabs[1]:
             template="plotly_white"
         )
         fig_rmse.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
-        st.plotly_chart(fig_rmse, use_container_width=True)
+        st.plotly_chart(fig_rmse, width='stretch')
     with c2:
         fig_r2 = px.bar(
             metric_df, x="모델", y="R2", color="모델",
@@ -273,7 +301,7 @@ with tabs[1]:
             template="plotly_white"
         )
         fig_r2.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
-        st.plotly_chart(fig_r2, use_container_width=True)
+        st.plotly_chart(fig_r2, width='stretch')
 
     st.markdown("---")
     st.markdown("#### 🎯 실제값 vs 예측값 비교")
@@ -301,7 +329,7 @@ with tabs[1]:
         xaxis_title="실제 성적", yaxis_title="예측 성적",
         template="plotly_white", margin=dict(l=40, r=40, t=50, b=40)
     )
-    st.plotly_chart(fig_scatter, use_container_width=True)
+    st.plotly_chart(fig_scatter, width='stretch')
 
     st.markdown("---")
     st.markdown("#### 🧬 피처 중요도 / 회귀 계수 분석")
@@ -322,7 +350,7 @@ with tabs[1]:
             template="plotly_white"
         )
         fig_importance.update_layout(margin=dict(l=40, r=40, t=50, b=40))
-        st.plotly_chart(fig_importance, use_container_width=True)
+        st.plotly_chart(fig_importance, width='stretch')
     elif hasattr(regressor, "coef_"):
         coef_df = pd.DataFrame({
             "피처": feature_names_ordered,
@@ -335,7 +363,7 @@ with tabs[1]:
             template="plotly_white"
         )
         fig_coef.update_layout(margin=dict(l=40, r=40, t=50, b=40))
-        st.plotly_chart(fig_coef, use_container_width=True)
+        st.plotly_chart(fig_coef, width='stretch')
     else:
         st.info("이 모델은 피처 중요도/계수 정보를 제공하지 않습니다.")
 
@@ -357,6 +385,12 @@ with tabs[2]:
         "grades_before_ai": grades_before,
         "daily_screen_time_hours": screen_time
     }])[feature_cols]
+
+    # 학습 시점과 동일한 dtype으로 맞춰 예측 오류를 예방 (범주형→문자열, 수치형→숫자)
+    for c in cat_cols:
+        input_df[c] = input_df[c].astype(str)
+    for c in num_cols:
+        input_df[c] = pd.to_numeric(input_df[c], errors='coerce').fillna(0)
 
     selected_pipeline = trained_models[model_choice]
     predicted_grade = selected_pipeline.predict(input_df)[0]
@@ -385,13 +419,16 @@ with tabs[2]:
         }
     ))
     fig_gauge.update_layout(margin=dict(l=40, r=40, t=60, b=20))
-    st.plotly_chart(fig_gauge, use_container_width=True)
+    st.plotly_chart(fig_gauge, width='stretch')
 
     st.markdown("---")
     st.markdown("#### 📝 입력된 학생 정보 요약")
-    st.dataframe(input_df, use_container_width=True)
+    st.dataframe(input_df, width='stretch')
 
     with st.expander("ℹ️ 예측 신뢰도 참고 정보"):
         res = evaluation_results[model_choice]
-        st.write(f"이 예측에 사용된 **{model_choice}** 모델의 테스트 데이터 성능은 RMSE **{res['RMSE']:.2f}**, R² **{res['R2']:.3f}** 입니다.")
-        st.caption("R²는 1에 가까울수록, RMSE는 0에 가까울수록 예측 정확도가 높다는 의미입니다.")
+        st.write(
+            f"이 예측에 사용된 **{model_choice}** 모델의 테스트 데이터 성능은 "
+            f"MSE **{res['MSE']:.2f}**, RMSE **{res['RMSE']:.2f}**, MAE **{res['MAE']:.2f}**, R² **{res['R2']:.3f}** 입니다."
+        )
+        st.caption("MSE·RMSE·MAE는 0에 가까울수록, R²는 1에 가까울수록 예측 정확도가 높다는 의미입니다.")
