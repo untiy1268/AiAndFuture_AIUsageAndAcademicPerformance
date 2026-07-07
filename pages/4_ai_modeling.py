@@ -355,23 +355,25 @@ def main():
 
         col1, col2 = st.columns(2)
         with col1:
-            st.plotly_chart(
-                plot_actual_vs_predicted(
-                    all_results[dataset_key], y_test,
-                    title=f"실제 vs 예측 ({dataset_key})",
-                ),
-                use_container_width=True,
-            )
-        with col2:
-            rf_model = trained_models[dataset_key].get("Random Forest")
-            if rf_model and hasattr(rf_model, "feature_importances_"):
+            with st.expander(f"📈 실제 vs 예측 ({dataset_key})", expanded=True):
                 st.plotly_chart(
-                    plot_feature_importance(
-                        rf_model, feature_cols,
-                        title=f"Feature Importance ({dataset_key})",
+                    plot_actual_vs_predicted(
+                        all_results[dataset_key], y_test,
+                        title=f"실제 vs 예측 ({dataset_key})",
                     ),
                     use_container_width=True,
                 )
+        with col2:
+            rf_model = trained_models[dataset_key].get("Random Forest")
+            if rf_model and hasattr(rf_model, "feature_importances_"):
+                with st.expander(f"🌳 종속 변수에 미치는 영향 ({dataset_key})", expanded=True):
+                    st.plotly_chart(
+                        plot_feature_importance(
+                            rf_model, feature_cols,
+                            title=f"종속 변수에 미치는 영향 ({dataset_key})",
+                        ),
+                        use_container_width=True,
+                    )
 
     # ============================================================
     # 섹션 3: 사용자 입력 → 두 파이프라인 동시 예측 비교
