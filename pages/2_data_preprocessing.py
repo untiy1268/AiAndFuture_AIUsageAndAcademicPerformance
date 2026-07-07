@@ -7,7 +7,8 @@ from sklearn.preprocessing import StandardScaler
 # 페이지 설정
 st.set_page_config(page_title="데이터 전처리", page_icon="⚙️", layout="wide")
 
-st.title("⚙️ 2. 데이터 전처리 (고정 파이프라인)")
+# 제목에서 (고정 파이프라인) 문구를 삭제했습니다.
+st.title("⚙️ 2. 데이터 전처리")
 st.markdown("---")
 
 # 파일 업로드 컴포넌트 없이 지정된 csv 파일을 자동으로 불러옵니다.
@@ -95,7 +96,7 @@ if os.path.exists(csv_filename):
             st.metric(label="전체 데이터 수", value=f"{original_df.shape[0]} 행")
             st.metric(label="변수(컬럼) 수", value=f"{original_df.shape[1]} 개")
             
-            # 원본 데이터의 전체 9개 컬럼 결측치 현황 출력 (수정된 핵심 영역)
+            # 원본 데이터의 전체 9개 컬럼 결측치 현황 출력
             st.write("**📌 전체 컬럼별 결측치 현황 (9개 전체)**")
             null_series = original_df.isnull().sum()
             null_df = pd.DataFrame({
