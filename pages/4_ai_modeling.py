@@ -1,185 +1,119 @@
 # ============================================================
 # AI 성적 예측 웹앱 (Streamlit + Plotly)
-# 목적: 학생의 AI 사용 및 학습 데이터를 기반으로
-#       AI 사용 후 성적(grades_after_ai)을 예측한다
+# 목적: 학생의 AI 사용 및 학습 데이터를 기반으로 AI 사용 후 성적(grades_after_ai)을 예측한다.
 # 사용 모델: Linear Regression, Random Forest Regressor
-# 데이터: students_ai_usage.csv         (전처리 전 원본 데이터, 100행)
-#         cleaned_student_ai_data.csv   (전처리 후 정제 데이터, 100행)
-# 특징: 두 데이터셋으로 각각 모델을 학습하여 성능을 비교한다
+# 데이터: cleaned_student_ai_data.csv (전처리 완료 데이터)
+# 특징: 원-핫 인코딩(One-Hot Encoding) 및 스케일링을 적용하여 예측 정확도를 높임
 # ============================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import joblib
 import os
 
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
 
 TARGET_COL = "grades_after_ai"
+DATA_PATH = "cleaned_student_ai_data.csv"
 
 # ============================================================
-# 0. 데이터셋 정의 (전처리 전 / 전처리 후)
+# 1. 데이터 로드 및 전처리 파이프라인
 # ============================================================
-DATASETS = {
-    "전처리 전": {
-        "path":  "students_ai_usage.csv",
-        "color": "#4C9BE8",
-    },
-    "전처리 후": {
-        "path":  "cleaned_student_ai_data.csv",
-        "color": "#E8714C",
-    },
-}
-
-# 두 데이터 모두 문자열 카테고리를 포함하므로,
-# 모델 학습이 가능하도록 최소한의 순서형(ordinal) 인코딩을 적용한다.
-# - 전처리 전(students_ai_usage.csv): uses_ai 컬럼 포함, 8개 피처
-# - 전처리 후(cleaned_student_ai_data.csv): uses_ai 컬럼이 제거된 정제본, 7개 피처
-RAW_CATEGORY_MAPS = {
-    "education_level": {"school": 0, "college": 1},
-    "uses_ai":         {"No": 0,     "Yes": 1},
-    "ai_tools_used":   {"None": 0, "ChatGPT": 1, "Copilot": 2, "Gemini": 3},
-    "purpose_of_ai":   {"None": 0, "Coding": 1,  "Homework": 2, "Research": 3},
-}
-
-AFTER_CATEGORY_MAPS = {
-    "education_level": {"school": 0, "college": 1},
-    "ai_tools_used":   {"None": 0, "ChatGPT": 1, "Copilot": 2, "Gemini": 3},
-    "purpose_of_ai":   {"None": 0, "Coding": 1,  "Homework": 2, "Research": 3},
-}
-
-RAW_FEATURE_COLS = [
-    "age", "education_level", "study_hours_per_day", "uses_ai",
-    "ai_tools_used", "purpose_of_ai", "grades_before_ai", "daily_screen_time_hours",
-]
-
-AFTER_FEATURE_COLS = [
-    "age", "education_level", "study_hours_per_day",
-    "ai_tools_used", "purpose_of_ai", "grades_before_ai", "daily_screen_time_hours",
-]
-
-# ============================================================
-# 1. 모델 관리 딕셔너리
-# ============================================================
-MODEL_REGISTRY = {
-    "Linear Regression": {
-        "model_class": LinearRegression,
-        "params":      {},
-    },
-    "Random Forest": {
-        "model_class": RandomForestRegressor,
-        "params":      {"n_estimators": 100, "random_state": 42},
-    },
-}
-
-MODEL_COLORS = {
-    "Linear Regression": {"전처리 전": "#4C9BE8", "전처리 후": "#1F5FA8"},
-    "Random Forest":      {"전처리 전": "#F2A65A", "전처리 후": "#E8714C"},
-}
-
-
-# ============================================================
-# 2. 데이터 로드 & 인코딩 함수
-# ============================================================
-
 @st.cache_data
-def load_raw_csv(filepath: str) -> pd.DataFrame:
+def load_data(filepath: str) -> pd.DataFrame:
     df = pd.read_csv(filepath)
-    df["ai_tools_used"] = df["ai_tools_used"].fillna("None")
-    df["purpose_of_ai"] = df["purpose_of_ai"].fillna("None")
+    # 결측치(NaN)를 문자열 'None'으로 치환 (ai_tools_used, purpose_of_ai)
+    if "ai_tools_used" in df.columns:
+        df["ai_tools_used"] = df["ai_tools_used"].fillna("None")
+    if "purpose_of_ai" in df.columns:
+        df["purpose_of_ai"] = df["purpose_of_ai"].fillna("None")
     return df
 
-
-@st.cache_data
-def load_after_csv(filepath: str) -> pd.DataFrame:
-    df = pd.read_csv(filepath)
-    df["ai_tools_used"] = df["ai_tools_used"].fillna("None")
-    df["purpose_of_ai"] = df["purpose_of_ai"].fillna("None")
-    return df
-
-
-def encode_raw_ordinal(df: pd.DataFrame) -> pd.DataFrame:
-    """전처리 전 데이터를 학습 가능하도록 최소 순서형 인코딩"""
-    df = df.copy()
-    for col, mapping in RAW_CATEGORY_MAPS.items():
-        df[col] = df[col].map(mapping).fillna(0).astype(int)
-    return df
-
-
-def encode_after_ordinal(df: pd.DataFrame) -> pd.DataFrame:
-    """전처리 후(cleaned) 데이터를 학습 가능하도록 최소 순서형 인코딩 (uses_ai 컬럼 없음)"""
-    df = df.copy()
-    for col, mapping in AFTER_CATEGORY_MAPS.items():
-        df[col] = df[col].map(mapping).fillna(0).astype(int)
-    return df
-
-
-def encode_user_input_after(user_raw: pd.DataFrame, after_feature_cols: list) -> pd.DataFrame:
-    """전처리 후 모델에 넣기 위해 사용자 입력을 동일한 방식(순서형 인코딩)으로 변환"""
-    df = user_raw.drop(columns=["uses_ai"], errors="ignore").copy()
-    for col, mapping in AFTER_CATEGORY_MAPS.items():
-        df[col] = df[col].map(mapping).fillna(0).astype(int)
-    return df.reindex(columns=after_feature_cols, fill_value=0)
-
-
-def get_model_filename(dataset_key: str, model_name: str) -> str:
-    safe_dataset = dataset_key.replace(" ", "")
-    safe_model   = model_name.replace(" ", "_")
-    return f"model_{safe_dataset}_{safe_model}.pkl"
-
-
-def load_or_create_model(dataset_key: str, model_name: str):
-    info = MODEL_REGISTRY[model_name]
-    filepath = get_model_filename(dataset_key, model_name)
-    if os.path.exists(filepath):
-        model = joblib.load(filepath)
+def preprocess_data(df: pd.DataFrame, is_train=True, encoder_cols=None, scaler=None):
+    """원-핫 인코딩 및 스케일링 수행"""
+    df_proc = df.copy()
+    
+    # 1. 범주형 변수에 대해 원-핫 인코딩 (One-Hot Encoding) 수행
+    df_proc = pd.get_dummies(
+        df_proc, 
+        columns=["education_level", "ai_tools_used", "purpose_of_ai"],
+        drop_first=False
+    )
+    
+    # 학습 시 더미 변수 목록과 스케일러를 생성하여 반환 (테스트 시 활용)
+    if is_train:
+        encoder_cols = [c for c in df_proc.columns if c != TARGET_COL]
+        # bool 형태를 int(0, 1)로 변환
+        for c in encoder_cols:
+            if df_proc[c].dtype == bool:
+                df_proc[c] = df_proc[c].astype(int)
+                
+        # 스케일링 적용
+        scaler = StandardScaler()
+        df_proc[encoder_cols] = scaler.fit_transform(df_proc[encoder_cols])
+        return df_proc, encoder_cols, scaler
+        
     else:
-        model = info["model_class"](**info["params"])
-    return model
+        # 예측(추론)용 데이터는 학습 시 없던 컬럼을 0으로 채워 추가
+        for col in encoder_cols:
+            if col not in df_proc.columns:
+                df_proc[col] = 0
+        df_proc = df_proc[encoder_cols]
+        
+        # bool 형태를 int(0, 1)로 변환
+        for c in encoder_cols:
+            if df_proc[c].dtype == bool:
+                df_proc[c] = df_proc[c].astype(int)
+                
+        # 스케일링 적용
+        df_proc[encoder_cols] = scaler.transform(df_proc[encoder_cols])
+        return df_proc
 
-
-def train_and_save(model, X_train, y_train, filepath: str):
-    model.fit(X_train, y_train)
-    joblib.dump(model, filepath)
-    return model
-
+# ============================================================
+# 2. 모델 학습 및 평가
+# ============================================================
+def train_models(X_train, y_train):
+    lr_model = LinearRegression()
+    rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+    
+    lr_model.fit(X_train, y_train)
+    rf_model.fit(X_train, y_train)
+    
+    return {"Linear Regression": lr_model, "Random Forest": rf_model}
 
 def evaluate_model(model, X_test, y_test) -> dict:
     preds = model.predict(X_test)
-    rmse  = np.sqrt(mean_squared_error(y_test, preds))
-    r2    = r2_score(y_test, preds)
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+    r2 = r2_score(y_test, preds)
     return {"RMSE": round(rmse, 4), "R² Score": round(r2, 4), "predictions": preds}
 
 
 # ============================================================
 # 3. Plotly 그래프 생성 함수
 # ============================================================
-
-def plot_actual_vs_predicted(results_for_dataset: dict, y_test, title: str) -> go.Figure:
+def plot_actual_vs_predicted(results: dict, y_test: np.ndarray, title: str) -> go.Figure:
     fig = go.Figure()
 
     all_vals = list(y_test)
-    for res in results_for_dataset.values():
+    for res in results.values():
         all_vals.extend(res["predictions"].tolist())
     lo, hi = min(all_vals) - 1, max(all_vals) + 1
 
-    for mname, res in results_for_dataset.items():
+    colors = {"Linear Regression": "#1F5FA8", "Random Forest": "#E8714C"}
+
+    for mname, res in results.items():
         fig.add_trace(go.Scatter(
-            x=list(y_test),
-            y=list(res["predictions"]),
+            x=y_test,
+            y=res["predictions"],
             mode="markers",
             name=mname,
-            marker=dict(size=8, opacity=0.7, line=dict(width=0.5, color="white")),
-            hovertemplate=(
-                f"<b>{mname}</b><br>실제: %{{x:.1f}}점<br>예측: %{{y:.1f}}점<extra></extra>"
-            ),
+            marker=dict(size=8, opacity=0.7, color=colors.get(mname), line=dict(width=0.5, color="white")),
+            hovertemplate=(f"<b>{mname}</b><br>실제: %{{x:.1f}}점<br>예측: %{{y:.1f}}점<extra></extra>"),
         ))
 
     fig.add_trace(go.Scatter(
@@ -189,21 +123,17 @@ def plot_actual_vs_predicted(results_for_dataset: dict, y_test, title: str) -> g
 
     fig.update_layout(
         title=dict(text=title, font=dict(size=15)),
-        xaxis_title="실제 grades_after_ai",
-        yaxis_title="예측 grades_after_ai",
+        xaxis_title="실제 성적 (grades_after_ai)",
+        yaxis_title="예측 성적 (grades_after_ai)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        height=380,
-        margin=dict(l=40, r=20, t=60, b=40),
-        hovermode="closest",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
+        height=380, margin=dict(l=40, r=20, t=60, b=40),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)"),
         yaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)"),
     )
     return fig
 
-
-def plot_feature_importance(rf_model, feature_cols: list, title: str) -> go.Figure:
+def plot_feature_importance(rf_model, feature_cols: list) -> go.Figure:
     importances = rf_model.feature_importances_
     feat_df = (
         pd.DataFrame({"feature": feature_cols, "importance": importances})
@@ -212,65 +142,16 @@ def plot_feature_importance(rf_model, feature_cols: list, title: str) -> go.Figu
 
     fig = go.Figure(go.Bar(
         x=feat_df["importance"], y=feat_df["feature"], orientation="h",
-        marker=dict(color=feat_df["importance"], colorscale="Blues", showscale=False),
+        marker=dict(color=feat_df["importance"], colorscale="Oranges", showscale=False),
         hovertemplate="<b>%{y}</b><br>중요도: %{x:.4f}<extra></extra>",
     ))
 
     fig.update_layout(
-        title=dict(text=title, font=dict(size=15)),
-        xaxis_title="Importance",
-        yaxis_title="",
-        height=380,
-        margin=dict(l=40, r=20, t=60, b=40),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
+        title=dict(text="Random Forest 변수 중요도 (Feature Importance)", font=dict(size=15)),
+        xaxis_title="Importance", yaxis_title="",
+        height=380, margin=dict(l=40, r=20, t=60, b=40),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)"),
-    )
-    return fig
-
-
-def plot_performance_comparison(all_results: dict) -> go.Figure:
-    """
-    전처리 전 vs 전처리 후 데이터로 학습한 모델들의 RMSE / R² 를
-    한 화면에서 비교하는 그룹형 바 차트
-    """
-    rows = []
-    for dataset_key, model_results in all_results.items():
-        for mname, res in model_results.items():
-            rows.append({
-                "데이터셋": dataset_key,
-                "모델":    mname,
-                "RMSE":    res["RMSE"],
-                "R² Score": res["R² Score"],
-            })
-    df_cmp = pd.DataFrame(rows)
-
-    fig = make_subplots(rows=1, cols=2, subplot_titles=("RMSE (낮을수록 좋음)", "R² Score (높을수록 좋음)"))
-
-    for dataset_key in DATASETS:
-        sub = df_cmp[df_cmp["데이터셋"] == dataset_key]
-        color = DATASETS[dataset_key]["color"]
-        fig.add_trace(
-            go.Bar(x=sub["모델"], y=sub["RMSE"], name=f"{dataset_key} · RMSE",
-                   marker_color=color, legendgroup=dataset_key,
-                   hovertemplate="<b>%{x}</b><br>RMSE: %{y:.4f}<extra></extra>"),
-            row=1, col=1,
-        )
-        fig.add_trace(
-            go.Bar(x=sub["모델"], y=sub["R² Score"], name=f"{dataset_key} · R²",
-                   marker_color=color, legendgroup=dataset_key, showlegend=False,
-                   hovertemplate="<b>%{x}</b><br>R²: %{y:.4f}<extra></extra>"),
-            row=1, col=2,
-        )
-
-    fig.update_layout(
-        title=dict(text="전처리 전 vs 전처리 후: 모델 성능 비교", font=dict(size=16)),
-        barmode="group",
-        height=420,
-        margin=dict(l=40, r=20, t=80, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
     )
     return fig
 
@@ -278,265 +159,134 @@ def plot_performance_comparison(all_results: dict) -> go.Figure:
 # ============================================================
 # 4. Streamlit 앱 메인
 # ============================================================
-
 def main():
     st.set_page_config(page_title="AI 성적 예측기", page_icon="🎓", layout="wide")
 
-    # ── 칼럼명(헤더) 글씨 크기 키우기 ───────────────────────────
+    # 테이블 헤더 폰트 사이즈 조정
     st.markdown(
-        """
-        <style>
-        div[data-testid="stDataFrame"] thead tr th {
-            font-size: 20px !important;
-            font-weight: 700 !important;
-        }
-        div[data-testid="stElementToolbar"] + div thead tr th {
-            font-size: 20px !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+        """<style>
+        div[data-testid="stDataFrame"] thead tr th { font-size: 16px !important; font-weight: 600 !important; }
+        </style>""", unsafe_allow_html=True
     )
 
-    st.title("🎓 AI 사용 후 성적 예측 웹앱")
+    st.title("🎓 AI 사용 후 성적 예측 (Cleaned Data)")
     st.markdown(
-        "**전처리 전 데이터(students_ai_usage.csv)** 와 "
-        "**전처리 후 데이터(cleaned_student_ai_data.csv)** 로 각각 모델을 학습하여 "
-        "성능 차이를 비교합니다."
+        "정제된 데이터(`cleaned_student_ai_data.csv`)를 활용하여 **선형 회귀**와 **랜덤 포레스트** "
+        "모델의 성능을 비교하고 새로운 학생의 성적을 예측합니다."
     )
     st.divider()
 
-    # ── 데이터 로드 ───────────────────────────────────────────
-    raw_path   = DATASETS["전처리 전"]["path"]
-    after_path = DATASETS["전처리 후"]["path"]
+    if not os.path.exists(DATA_PATH):
+        st.error(f"❌ '{DATA_PATH}' 파일을 찾을 수 없습니다. 앱과 같은 폴더에 파일을 넣어주세요.")
+        st.stop()
 
-    for p in (raw_path, after_path):
-        if not os.path.exists(p):
-            st.error(f"❌ '{p}' 파일을 찾을 수 없습니다. 앱과 같은 폴더에 파일을 넣어주세요.")
-            st.stop()
+    # 데이터 로드
+    df_raw = load_data(DATA_PATH)
+    
+    # 훈련/테스트 데이터 분리 (Target 분리)
+    X_raw = df_raw.drop(columns=[TARGET_COL])
+    y = df_raw[TARGET_COL]
 
-    df_raw_original  = load_raw_csv(raw_path)               # 전처리 전 원본 (문자열 카테고리 포함)
-    df_raw_encoded   = encode_raw_ordinal(df_raw_original)  # 학습용 최소 인코딩
+    X_train_raw, X_test_raw, y_train, y_test = train_test_split(
+        X_raw, y, test_size=0.2, random_state=42
+    )
 
-    df_after_original = load_after_csv(after_path)                  # 전처리 후 원본 (uses_ai 컬럼 제거된 정제 데이터)
-    df_after_encoded  = encode_after_ordinal(df_after_original)     # 학습용 최소 인코딩
+    # 전처리 적용 (인코딩 & 스케일링)
+    X_train_processed, encoder_cols, scaler = preprocess_data(X_train_raw, is_train=True)
+    X_test_processed = preprocess_data(X_test_raw, is_train=False, encoder_cols=encoder_cols, scaler=scaler)
 
-    FEATURE_COLS_BY_DATASET = {
-        "전처리 전": RAW_FEATURE_COLS,
-        "전처리 후": AFTER_FEATURE_COLS,
+    # 모델 학습
+    models = train_models(X_train_processed, y_train)
+    results = {
+        mname: evaluate_model(model, X_test_processed, y_test)
+        for mname, model in models.items()
     }
-    DATA_BY_DATASET = {
-        "전처리 전": df_raw_encoded,
-        "전처리 후": df_after_encoded,
-    }
-
-    # ── 모델 학습/평가 (데이터셋 × 모델 조합) ───────────────────
-    trained_models = {"전처리 전": {}, "전처리 후": {}}
-    all_results    = {"전처리 전": {}, "전처리 후": {}}
-    split_cache    = {}  # 데이터셋별 X_test, y_test 저장
-
-    for dataset_key, feature_cols in FEATURE_COLS_BY_DATASET.items():
-        df = DATA_BY_DATASET[dataset_key]
-        X = df[feature_cols]
-        y = df[TARGET_COL]
-
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
-        split_cache[dataset_key] = (X_test, y_test)
-
-        for model_name, info in MODEL_REGISTRY.items():
-            filepath = get_model_filename(dataset_key, model_name)
-            model = load_or_create_model(dataset_key, model_name)
-            if not os.path.exists(filepath):
-                model = train_and_save(model, X_train, y_train, filepath)
-            trained_models[dataset_key][model_name] = model
-            all_results[dataset_key][model_name] = evaluate_model(model, X_test, y_test)
 
     # ============================================================
-    # 섹션 1: 전처리 전 vs 전처리 후 모델 성능 비교 (큰 드롭다운)
+    # 섹션 1: 모델 성능 및 데이터 시각화
     # ============================================================
-    with st.expander("📊 전처리 전 vs 전처리 후: 모델 성능 비교", expanded=True):
-        rows = []
-        for dataset_key, model_results in all_results.items():
-            for mname, res in model_results.items():
-                rows.append({
-                    "데이터셋":  dataset_key,
-                    "모델":     mname,
-                    "특성 개수": len(FEATURE_COLS_BY_DATASET[dataset_key]),
-                    "RMSE":     res["RMSE"],
-                    "R² Score": res["R² Score"],
-                })
-        df_cmp_table = pd.DataFrame(rows).set_index(["데이터셋", "모델"])
-        st.dataframe(df_cmp_table, use_container_width=True)
+    with st.expander("📊 모델 성능 비교 및 시각화", expanded=True):
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.markdown("**Linear Regression (선형 회귀)**")
+            st.metric(label="RMSE (낮을수록 좋음)", value=f"{results['Linear Regression']['RMSE']:.4f}")
+            st.metric(label="R² Score (높을수록 좋음)", value=f"{results['Linear Regression']['R² Score']:.4f}")
+        with col_m2:
+            st.markdown("**Random Forest (랜덤 포레스트)**")
+            st.metric(label="RMSE (낮을수록 좋음)", value=f"{results['Random Forest']['RMSE']:.4f}")
+            st.metric(label="R² Score (높을수록 좋음)", value=f"{results['Random Forest']['R² Score']:.4f}")
 
-        st.plotly_chart(plot_performance_comparison(all_results), use_container_width=True)
-
-        st.caption(
-            "💡 두 데이터셋 모두 동일한 100개 행(같은 학생, 같은 순서)에서 "
-            "동일한 `random_state=42`로 분할했기 때문에, 테스트셋에 포함된 학생이 "
-            "동일하여 공정하게 비교할 수 있습니다. "
-            "두 데이터 모두 카테고리를 숫자로 바꾼 순서형 인코딩을 사용하며, "
-            "'전처리 후'(cleaned_student_ai_data.csv)는 중복 정보였던 `uses_ai` 컬럼이 "
-            "제거되어 특성이 7개(전처리 전은 8개)입니다."
-        )
+        st.divider()
+        col_fig1, col_fig2 = st.columns(2)
+        with col_fig1:
+            st.plotly_chart(plot_actual_vs_predicted(results, y_test.values, "실제 vs 예측 성적"), use_container_width=True)
+        with col_fig2:
+            st.plotly_chart(plot_feature_importance(models["Random Forest"], encoder_cols), use_container_width=True)
 
     # ============================================================
-    # 섹션 2: 데이터셋별 상세 시각화 (나란히 비교, 큰 드롭다운)
-    # ============================================================
-    with st.expander("📈 데이터셋별 상세 시각화", expanded=True):
-        for dataset_key in DATASETS:
-            st.subheader(f"🔹 {dataset_key} 데이터 기반 모델")
-            X_test, y_test = split_cache[dataset_key]
-            feature_cols = FEATURE_COLS_BY_DATASET[dataset_key]
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.plotly_chart(
-                    plot_actual_vs_predicted(
-                        all_results[dataset_key], y_test,
-                        title=f"실제 vs 예측 ({dataset_key})",
-                    ),
-                    use_container_width=True,
-                )
-            with col2:
-                rf_model = trained_models[dataset_key].get("Random Forest")
-                if rf_model and hasattr(rf_model, "feature_importances_"):
-                    st.plotly_chart(
-                        plot_feature_importance(
-                            rf_model, feature_cols,
-                            title=f"종속 변수에 미치는 영향 ({dataset_key})",
-                        ),
-                        use_container_width=True,
-                    )
-
-    # ============================================================
-    # 섹션 3: 사용자 입력 → 두 파이프라인 동시 예측 비교 (큰 드롭다운)
+    # 섹션 2: 새로운 학생 성적 예측하기
     # ============================================================
     st.divider()
-    with st.expander("🔮 성적 예측하기 (전처리 전 / 후 모델 동시 비교)", expanded=True):
-        st.markdown("아래에 학생 정보를 입력한 뒤 **Predict** 버튼을 눌러 두 파이프라인의 예측 결과를 비교하세요.")
+    with st.expander("🔮 새로운 학생 성적 예측하기", expanded=True):
+        st.markdown("학생 정보를 입력하고 **Predict** 버튼을 눌러 모델별 예측 결과를 확인하세요.")
 
         inp1, inp2 = st.columns(2)
-
         with inp1:
             age = st.slider("나이 (age)", min_value=14, max_value=19, value=17, step=1)
-            education_level = st.selectbox(
-                "교육 수준 (education_level)", options=["school", "college"]
-            )
-            study_hours = st.slider(
-                "하루 공부 시간 (study_hours_per_day)",
-                min_value=1.0, max_value=5.0, value=3.0, step=0.1
-            )
-            uses_ai = st.selectbox("AI 사용 여부 (uses_ai)", options=["Yes", "No"])
-
-        with inp2:
-            ai_disabled = (uses_ai == "No")
+            education_level = st.selectbox("교육 수준 (education_level)", options=["school", "college"])
+            study_hours = st.slider("하루 공부 시간 (study_hours_per_day)", min_value=1.0, max_value=5.0, value=3.0, step=0.1)
+            
+            # uses_ai 컬럼이 사라졌으므로, 도구 선택 옵션에 'None'을 명시적으로 포함
             ai_tools_used = st.selectbox(
-                "사용 AI 도구 (ai_tools_used)",
-                options=["ChatGPT", "Copilot", "Gemini"],
-                disabled=ai_disabled,
-                help="AI를 사용하지 않으면 선택이 비활성화됩니다."
+                "사용 AI 도구 (ai_tools_used)", 
+                options=["None", "ChatGPT", "Copilot", "Gemini"]
             )
+        
+        with inp2:
             purpose_of_ai = st.selectbox(
-                "AI 사용 목적 (purpose_of_ai)",
-                options=["Coding", "Homework", "Research"],
-                disabled=ai_disabled,
-                help="AI를 사용하지 않으면 선택이 비활성화됩니다."
+                "AI 사용 목적 (purpose_of_ai)", 
+                options=["None", "Coding", "Homework", "Research"]
             )
-            grades_before = st.slider(
-                "AI 사용 전 성적 (grades_before_ai)",
-                min_value=55, max_value=75, value=65, step=1
-            )
-            screen_time = st.slider(
-                "하루 스크린 타임 (daily_screen_time_hours)",
-                min_value=2, max_value=7, value=4, step=1
-            )
+            grades_before = st.slider("AI 사용 전 성적 (grades_before_ai)", min_value=55, max_value=75, value=65, step=1)
+            screen_time = st.slider("하루 스크린 타임 (daily_screen_time_hours)", min_value=2, max_value=7, value=4, step=1)
 
-        if st.button("🚀 Predict", type="primary", use_container_width=True):
-            actual_ai_tool    = "None" if uses_ai == "No" else ai_tools_used
-            actual_ai_purpose = "None" if uses_ai == "No" else purpose_of_ai
-
+        if st.button("🚀 Predict (성적 예측)", type="primary", use_container_width=True):
+            # 입력받은 데이터를 DataFrame으로 변환
             user_raw = pd.DataFrame([{
-                "age":                     age,
-                "education_level":         education_level,
-                "study_hours_per_day":     study_hours,
-                "uses_ai":                 uses_ai,
-                "ai_tools_used":           actual_ai_tool,
-                "purpose_of_ai":           actual_ai_purpose,
-                "grades_before_ai":        grades_before,
+                "age": age,
+                "education_level": education_level,
+                "study_hours_per_day": study_hours,
+                "ai_tools_used": ai_tools_used,
+                "purpose_of_ai": purpose_of_ai,
+                "grades_before_ai": grades_before,
                 "daily_screen_time_hours": screen_time,
             }])
 
-            user_before = encode_raw_ordinal(user_raw)[RAW_FEATURE_COLS]
-            user_after  = encode_user_input_after(user_raw, AFTER_FEATURE_COLS)
-
-            user_by_dataset = {"전처리 전": user_before, "전처리 후": user_after}
-
-            st.divider()
-            st.subheader("🎯 예측 결과 비교")
-
-            # 예측값 수집: pred_values[데이터셋][모델] = 값
-            pred_values = {"전처리 전": {}, "전처리 후": {}}
-            for dataset_key, models in trained_models.items():
-                for mname, model in models.items():
-                    pred = float(np.clip(
-                        model.predict(user_by_dataset[dataset_key])[0], 0, 100
-                    ))
-                    pred_values[dataset_key][mname] = pred
-
-            # st.metric 카드: 데이터셋별로 구분해서 표시
-            for dataset_key in DATASETS:
-                st.markdown(f"**{dataset_key} 모델**")
-                m_cols = st.columns(len(MODEL_REGISTRY))
-                for col, (mname, pred) in zip(m_cols, pred_values[dataset_key].items()):
-                    with col:
-                        st.metric(
-                            label=f"📌 {mname}",
-                            value=f"{pred:.1f} 점",
-                            delta=f"{pred - grades_before:+.1f} 점 (AI 사용 전 대비)",
-                        )
-
-            # ── 예측값 비교 바 차트 (Plotly) ──────────────────────
-            fig_pred_cmp = go.Figure()
-            for dataset_key in DATASETS:
-                fig_pred_cmp.add_trace(go.Bar(
-                    name=dataset_key,
-                    x=list(pred_values[dataset_key].keys()),
-                    y=list(pred_values[dataset_key].values()),
-                    marker_color=DATASETS[dataset_key]["color"],
-                    hovertemplate="<b>%{x}</b><br>예측: %{y:.1f}점<extra></extra>",
-                ))
-            fig_pred_cmp.add_hline(
-                y=grades_before, line_dash="dash", line_color="gray",
-                annotation_text="AI 사용 전 성적", annotation_position="top left",
+            # 사용자 데이터 전처리 적용 (동일한 원-핫 인코딩 및 스케일링)
+            user_processed = preprocess_data(
+                user_raw, is_train=False, encoder_cols=encoder_cols, scaler=scaler
             )
-            fig_pred_cmp.update_layout(
-                title=dict(text="모델·데이터셋별 예측 성적 비교", font=dict(size=15)),
-                yaxis_title="예측 grades_after_ai",
-                barmode="group",
-                height=380,
-                margin=dict(l=40, r=20, t=60, b=40),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)",
-            )
-            st.plotly_chart(fig_pred_cmp, use_container_width=True)
 
+            st.subheader("🎯 예측 결과")
+            pred_cols = st.columns(2)
+            
+            for col, (mname, model) in zip(pred_cols, models.items()):
+                # 점수는 0~100점 사이로 클리핑
+                pred = float(np.clip(model.predict(user_processed)[0], 0, 100))
+                with col:
+                    st.metric(
+                        label=f"📌 {mname}",
+                        value=f"{pred:.1f} 점",
+                        delta=f"{pred - grades_before:+.1f} 점 (AI 사용 전 대비)"
+                    )
             st.success("✅ 예측이 완료되었습니다!")
 
     # ============================================================
-    # 섹션 4: 데이터 미리보기 (큰 드롭다운)
+    # 섹션 3: 데이터 미리보기
     # ============================================================
     with st.expander("📂 데이터 미리보기"):
-        st.markdown("**전처리 전 데이터 (students_ai_usage.csv)**")
-        st.dataframe(df_raw_original.head(10), use_container_width=True)
-        st.caption(f"{df_raw_original.shape[0]}행 × {df_raw_original.shape[1]}열")
-
-        st.markdown("**전처리 후 데이터 (cleaned_student_ai_data.csv)**")
-        st.dataframe(df_after_original.head(10), use_container_width=True)
-        st.caption(f"{df_after_original.shape[0]}행 × {df_after_original.shape[1]}열")
-
+        st.dataframe(df_raw.head(10), use_container_width=True)
+        st.caption(f"전체 데이터 크기: {df_raw.shape[0]}행 × {df_raw.shape[1]}열")
 
 if __name__ == "__main__":
     main()
