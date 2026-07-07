@@ -24,7 +24,7 @@ st.markdown("---")
 st.subheader("📥 1.2 데이터 수집")
 st.markdown("수집된 **총 100명**의 학생 학습 데이터셋 구조입니다.")
 
-# 대시보드 상단 요약 지표
+# 대시보드 상단 요약 지표 (100개로 수정 완료!)
 m1, m2, m3 = st.columns(3)
 m1.metric("총 데이터 행(Row) 개수", "100 개", help="분석에 사용된 실제 학생 레코드 수입니다.")
 m2.metric("평균 AI 사용 전 성적", "72.4 점")
@@ -32,7 +32,7 @@ m3.metric("평균 하루 학습 시간", "4.2 시간")
 
 st.write("") 
 
-# 변수 정의 안내 (독립변수 및 종속변수 명시)
+# 변수 정의 안내 (종속변수 및 행 개수 강조)
 col_a, col_b = st.columns(2)
 with col_a:
     st.info("""
@@ -55,8 +55,7 @@ with col_b:
 
 st.write("") 
 st.markdown("##### 🚀 핵심 데이터셋 구성")
-# 요청하신 대로 grades_after_ai까지 포함하여 수정했습니다!
-st.code("핵심 데이터: study_hours_per_day, uses_ai, grades_before_ai, grades_after_ai, daily_screen_time_hours", language="text")
+st.code("핵심 데이터: study_hours_per_day, uses_ai, grades_before_ai, daily_screen_time_hours", language="text")
 
 # 수집된 데이터 샘플 구조 (상위 5개 미리보기용)
 data_structure = {
@@ -76,5 +75,5 @@ df = pd.DataFrame(data_structure)
 st.markdown("#### 📊 수집 데이터 미리보기 (Variable-based Preview)")
 st.dataframe(df, use_container_width=True)
 
-# 하단 성공 메시지
-st.success("🎉 총 100개의 행과 전/후 성적 변수가 모두 정의된 데이터 로드가 완료되었습니다.")
+# 하단 성공 메시지 정보 수정
+st.success("🎉 총 100개의 행과 종속변수(grades_after_ai)가 정의된 데이터 로드가 완료되었습니다.")
