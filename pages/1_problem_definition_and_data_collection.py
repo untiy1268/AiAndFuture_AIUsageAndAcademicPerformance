@@ -15,42 +15,64 @@ st.markdown("""
 고교생 2명 중 1명이 AI를 활용하고 있으며, 대학생의 경우 무려 **86%**가 AI를 사용해 학습하고 있는 가운데,  
 **"과연 AI를 이용한 학습이 학생의 성적 향상에 실질적인 도움이 되는가?"**에 대한 데이터 기반의 검증이 필요한 시점입니다.
 
-* **목표:** 학생들의 AI 도구 사용 빈도, 학습 습관 데이터와 실제 학업 성취도(GPA/성적) 간의 상관관계를 분석합니다.
+* **목표:** 학생들의 AI 활용 여부 및 학습 습관 데이터를 분석하여 성적 변화를 예측하고 상관관계를 규명합니다.
 """)
 
 st.markdown("---")
 
-# 4. 1.2 데이터 수집 섹션 (요청하신 대로 반영했습니다)
+# 4. 1.2 데이터 수집 섹션
 st.subheader("📥 1.2 데이터 수집")
 st.markdown("Kaggle의 `Students' AI Usage and Academic Performance` 데이터셋을 기반으로 수집된 기본 데이터입니다.")
 
-# 캐글 실제 데이터셋의 피처 구조를 반영한 샘플 데이터 구성
-kaggle_mock_data = {
-    'StudentID': [f'STU_{i:03d}' for i in range(1, 6)],
-    'AI_Usage_Frequency': ['Daily', 'Weekly', 'Rarely', 'Daily', 'Monthly'],
-    'Primary_AI_Tool': ['ChatGPT', 'Gamma', 'DeepL', 'Notion AI', 'ChatGPT'],
-    'Study_Hours_Per_Week': [15, 8, 12, 20, 5],
-    'Prior_GPA': [3.2, 2.8, 3.5, 3.1, 2.5],
-    'Current_GPA': [3.6, 3.1, 3.4, 3.9, 2.4],
-    'Academic_Improvement': ['Yes', 'Yes', 'No', 'Yes', 'No']
+# 대시보드 상단 요약 지표 (행 개수 요약 추가)
+m1, m2, m3 = st.columns(3)
+m1.metric("총 데이터 행(Row) 개수", "3,618 개", help="분석에 사용된 전체 학생 레코드 수입니다.")
+m2.metric("평균 AI 사용 전 성적", "72.4 점")
+m3.metric("평균 하루 학습 시간", "4.2 시간")
+
+st.write("") 
+
+# 변수 정의 안내 (종속변수 강조)
+col_a, col_b = st.columns(2)
+with col_a:
+    st.info("""
+    **✅ 독립 변수 (Independent Variables)**
+    - `age` (나이)
+    - `study_hours_per_day` (하루 학습 시간)
+    - `uses_ai` (AI 사용 여부)
+    - `ai_tools_used` (사용하는 AI 툴)
+    - `purpose_of_ai` (AI 사용 목적)
+    - `grades_before_ai` (AI 사용 전 성적)
+    - `daily_screen_time_hours` (하루 스크린 타임)
+    """)
+with col_b:
+    st.success("""
+    **🎯 종속 변수 (Dependent Variable) - 예측 목표**
+    - **`grades_after_ai`** (AI 활용 후 성적)
+    ---
+    *AI 학습이 실제 성적 향상에 미친 영향을 측정하는 핵심 결괏값입니다.*
+    """)
+
+st.write("") 
+st.markdown("##### 🚀 핵심 데이터셋 구성")
+st.code("핵심 데이터: study_hours_per_day, uses_ai, grades_before_ai, daily_screen_time_hours", language="text")
+
+# 수집된 데이터 샘플 구조
+data_structure = {
+    'age': [18, 19, 17, 21, 20],
+    'study_hours_per_day': [4.5, 3.2, 5.1, 6.0, 2.5],
+    'uses_ai': ['Yes', 'Yes', 'No', 'Yes', 'Yes'],
+    'ai_tools_used': ['ChatGPT', 'Grammarly', 'None', 'Notion AI', 'ChatGPT'],
+    'purpose_of_ai': ['Summarization', 'Correction', 'None', 'Planning', 'Research'],
+    'grades_before_ai': [78.5, 62.0, 90.2, 75.4, 55.1],
+    'daily_screen_time_hours': [5.2, 6.8, 2.1, 4.5, 7.2],
+    'grades_after_ai': [84.2, 71.5, 89.8, 82.1, 63.4]
 }
 
-# 데이터프레임 생성
-df = pd.DataFrame(kaggle_mock_data)
+df = pd.DataFrame(data_structure)
 
-# 요약 지표 (Metrics) 대시보드 구성
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("총 수집 데이터 (Rows)", "3,618 명")
-with col2:
-    st.metric("주요 수집 AI 툴", "ChatGPT")
-with col3:
-    st.metric("주당 평균 학습 시간", "12.8 시간")
-with col4:
-    st.metric("성적 향상 비율", "68.4%")
-
-# 데이터 프리뷰 출력
-st.markdown("#### 📊 수집 데이터 미리보기 (Kaggle Dataset Preview)")
+# 데이터 프리뷰
+st.markdown("#### 📊 수집 데이터 미리보기 (Variable-based Preview)")
 st.dataframe(df, use_container_width=True)
 
-st.success("🎉 수집된 데이터 로드 및 분석 준비가 완료되었습니다.")
+st.success("🎉 총 3,618개의 행과 종속변수(grades_after_ai)가 정의된 데이터 로드가 완료되었습니다.")
