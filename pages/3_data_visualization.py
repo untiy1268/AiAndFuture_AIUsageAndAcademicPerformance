@@ -18,6 +18,14 @@ def load_data():
     # 이 파일(pages/3_data_visualization.py)의 상위 폴더(=저장소 루트)를 기준으로 CSV 경로를 잡음
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     csv_path = os.path.join(root_dir, "preprocessed_sau_data.csv")
+
+    # ── 디버깅: 문제 해결 후 이 블록은 지워도 됩니다 ──
+    if not os.path.exists(csv_path):
+        st.error(f"CSV 파일을 찾을 수 없습니다.\n\n찾으려던 경로: {csv_path}")
+        st.write("root_dir 내용:", os.listdir(root_dir))
+        st.stop()
+    # ─────────────────────────────────────────────
+
     df = pd.read_csv(csv_path)
     # 성적 변화량 계산 (도입 후 - 도입 전)
     df["grade_change"] = df["grades_after_ai"] - df["grades_before_ai"]
