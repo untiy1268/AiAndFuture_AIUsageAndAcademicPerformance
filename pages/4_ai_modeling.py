@@ -9,6 +9,8 @@ from sklearn.preprocessing import OrdinalEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 import plotly.express as px
@@ -104,6 +106,10 @@ MODEL_REGISTRY = {
     "Random Forest": {
         "model_class": RandomForestRegressor,
         "params": {"n_estimators": 100, "random_state": 42}
+    },
+    "K-Nearest Neighbors": {
+        "model_class": KNeighborsRegressor,
+        "params": {"n_neighbors": 5}
     }
 }
 
@@ -134,10 +140,15 @@ def train_and_cache_pipelines(dataset_key: str, _df, feature_cols, target_col):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # 수동 매핑을 대체하는 깔끔한 ColumnTransformer 파이프라인 구성
+    # ⚠️ K-최근접 이웃(KNN)은 거리 기반 알고리즘이라 피처 스케일에 매우 민감하다.
+    # 예를 들어 age(10~30)와 study_hours_per_day(0~12) 같은 수치형 변수를
+    # 그대로 두면 값의 범위가 큰 피처가 거리 계산을 지배해버린다.
+    # 따라서 'passthrough' 대신 StandardScaler로 표준화한다.
+    # (선형회귀·랜덤포레스트는 스케일링에 영향을 받지 않으므로 함께 사용해도 안전하다.)
     preprocessor = ColumnTransformer(
         transformers=[
             ('cat', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), cat_cols),
-            ('num', 'passthrough', num_cols)
+            ('num', StandardScaler(), num_cols)
         ]
     )
 
@@ -238,7 +249,7 @@ with tabs[1]:
         fig_mse = px.bar(
             metric_df, x="모델", y="MSE", color="모델",
             title="📉 모델별 MSE 비교 (낮을수록 좋음)",
-            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN, COLOR_HIGHLIGHT],
             template="plotly_white"
         )
         fig_mse.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
@@ -247,7 +258,7 @@ with tabs[1]:
         fig_mae = px.bar(
             metric_df, x="모델", y="MAE", color="모델",
             title="📉 모델별 MAE 비교 (낮을수록 좋음)",
-            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN, COLOR_HIGHLIGHT],
             template="plotly_white"
         )
         fig_mae.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
@@ -258,7 +269,7 @@ with tabs[1]:
         fig_rmse = px.bar(
             metric_df, x="모델", y="RMSE", color="모델",
             title="📉 모델별 RMSE 비교 (낮을수록 좋음)",
-            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN, COLOR_HIGHLIGHT],
             template="plotly_white"
         )
         fig_rmse.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
@@ -267,7 +278,7 @@ with tabs[1]:
         fig_r2 = px.bar(
             metric_df, x="모델", y="R2", color="모델",
             title="📈 모델별 R² 비교 (높을수록 좋음)",
-            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN, COLOR_HIGHLIGHT],
             template="plotly_white"
         )
         fig_r2.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
