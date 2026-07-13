@@ -206,11 +206,5 @@ if os.path.exists(csv_filename):
         mime="text/csv",
         use_container_width=True
     )
-
-    # ⚠️ st.download_button은 사용자 브라우저로만 파일을 전송할 뿐,
-    # 앱이 실행되는 서버 디스크에는 저장하지 않습니다.
-    # 4번 페이지(AI 모델링)가 cleaned_student_ai_data.csv를 바로 읽을 수 있도록
-    # 이 페이지를 열 때마다 서버 디스크에도 동일한 파일을 실제로 저장해둡니다.
-    outlier_removed_df.to_csv("cleaned_student_ai_data.csv", index=False)
 else:
     st.error(f"❌ 데이터 파일을 로드하지 못했습니다. 스크립트와 동일한 위치에 `{csv_filename}` 파일이 존재해야 합니다.")
