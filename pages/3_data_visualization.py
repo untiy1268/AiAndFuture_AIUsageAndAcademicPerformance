@@ -290,14 +290,17 @@ elif selected == "boxplot":
 #      -1~1 범위를 지키도록 상관계수(correlation) 기반 히트맵으로 변경했습니다.
 # ════════════════════════════════════════════════════════════════
 elif selected == "heatmap":
-    ai_heat = df[df["uses_ai"] == "Yes"].copy()
+    corr_df = df.copy()
+    # AI 사용 여부를 0/1 숫자로 변환해 다른 변수들과 함께 상관관계를 볼 수 있게 함
+    corr_df["ai_used_num"] = (corr_df["uses_ai"] == "Yes").astype(int)
 
     corr_cols = {
+        "ai_used_num": "AI 사용 여부",
         "study_hours_per_day": "공부 시간",
         "daily_screen_time_hours": "스크린 타임",
         "grade_change": "성적 향상도",
     }
-    corr_matrix = ai_heat[list(corr_cols.keys())].rename(columns=corr_cols).corr()
+    corr_matrix = corr_df[list(corr_cols.keys())].rename(columns=corr_cols).corr()
 
     fig = px.imshow(
         corr_matrix,
@@ -309,20 +312,22 @@ elif selected == "heatmap":
     )
     fig.update_layout(
         title={
-            "text": "공부 시간 · 스크린 타임 · 성적 향상도 간 상관관계<br><sup>(값의 범위: -1 ~ 1 / AI 사용 학생 대상)</sup>",
+            "text": "AI 사용 여부 · 공부 시간 · 스크린 타임 · 성적 향상도 간 상관관계<br><sup>(값의 범위: -1 ~ 1 / 전체 학생 대상)</sup>",
             "x": 0.5
         }
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    ai_corr = corr_matrix.loc["AI 사용 여부", "성적 향상도"]
     study_corr = corr_matrix.loc["공부 시간", "성적 향상도"]
     screen_corr = corr_matrix.loc["스크린 타임", "성적 향상도"]
     st.info(
-        f"공부 시간과 성적 향상도의 상관계수는 **{study_corr:+.2f}**, "
-        f"스크린 타임과 성적 향상도의 상관계수는 **{screen_corr:+.2f}**입니다. "
-        "상관계수는 항상 -1(강한 음의 관계) ~ +1(강한 양의 관계) 사이의 값을 가지며, "
-        "0에 가까울수록 두 변수 간 선형적 관계가 약하다는 뜻입니다. "
-        "대각선은 자기 자신과의 상관관계이므로 항상 1입니다."
+        f"**'AI 사용 여부'와 '성적 향상도'의 상관계수는 +{ai_corr:.2f}로 매우 강한 양의 관계**를 보입니다. "
+        f"반면 공부 시간(**{study_corr:+.2f}**)과 스크린 타임(**{screen_corr:+.2f}**)은 성적 향상도와 "
+        "거의 관계가 없습니다. 즉, 이 데이터에서는 얼마나 오래 공부하거나 화면을 보느냐보다 "
+        "**AI를 사용했는지 여부 자체가 성적 향상과 가장 밀접하게 연관된 요인**으로 나타납니다. "
+        "상관계수는 -1(강한 음의 관계) ~ +1(강한 양의 관계) 사이의 값을 가지며, 0에 가까울수록 "
+        "두 변수 간 선형적 관계가 약하다는 뜻입니다."
     )
 
 st.markdown("---")
