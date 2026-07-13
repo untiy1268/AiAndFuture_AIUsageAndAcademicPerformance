@@ -227,30 +227,43 @@ elif selected == "scatter":
     )
 
 # ════════════════════════════════════════════════════════════════
-# 6. Box Plot — 교육 수준별
+# 6. Grouped Bar — 교육 수준별 평균 성적 향상 (박스플롯 대체)
+#    ※ AI 미사용 그룹은 grade_change가 전원 정확히 0점으로 값의 편차가
+#      전혀 없어, 박스플롯으로 그리면 상자가 눌린 직선이 되어 '안 보이는'
+#      것처럼 보였습니다. 분산이 없는 데이터는 박스플롯보다 막대그래프가
+#      더 명확하므로 아래와 같이 변경했습니다.
 # ════════════════════════════════════════════════════════════════
 elif selected == "boxplot":
     box_df = df.copy()
     box_df["uses_ai_label"] = box_df["uses_ai"].map({"No": "AI 미사용", "Yes": "AI 사용"})
     box_df["edu_label"] = box_df["education_level"].map({"school": "중·고등학교", "college": "대학교"})
 
-    fig = px.box(
-        box_df,
-        x="uses_ai_label",
-        y="grade_change",
-        color="uses_ai_label",
-        facet_col="edu_label",
-        category_orders={"uses_ai_label": ["AI 미사용", "AI 사용"], "edu_label": ["중·고등학교", "대학교"]},
-        color_discrete_map={"AI 미사용": COLOR_NO, "AI 사용": COLOR_YES}
+    summary = (
+        box_df.groupby(["edu_label", "uses_ai_label"], observed=True)["grade_change"]
+        .agg(mean="mean", std="std", count="count")
+        .reset_index()
     )
+    summary["std"] = summary["std"].fillna(0)
+    summary["label"] = summary["mean"].map(lambda v: f"{v:+.2f}")
 
-    fig.update_layout(
-        title={"text": "교육 수준 × AI 사용 여부별 성적 향상 분포", "x": 0.5},
-        yaxis_title="성적 향상도 (점)",
-        showlegend=False
+    fig = px.bar(
+        summary,
+        x="edu_label",
+        y="mean",
+        color="uses_ai_label",
+        barmode="group",
+        error_y="std",
+        text="label",
+        category_orders={"uses_ai_label": ["AI 미사용", "AI 사용"], "edu_label": ["중·고등학교", "대학교"]},
+        color_discrete_map={"AI 미사용": COLOR_NO, "AI 사용": COLOR_YES},
     )
-    fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-    fig.update_xaxes(title_text="")
+    fig.update_traces(textposition="outside")
+    fig.update_layout(
+        title={"text": "교육 수준 × AI 사용 여부별 평균 성적 향상 비교", "x": 0.5},
+        xaxis_title="",
+        yaxis_title="평균 성적 향상도 (점, 오차막대=표준편차)",
+        legend_title_text="",
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     edu_order  = ["school", "college"]
@@ -264,49 +277,52 @@ elif selected == "boxplot":
             st.warning(f"**{edu_labels[edu]}**의 AI 사용 학생 데이터가 부족합니다.")
 
     st.info(
-        "💡 **그래프 해석 안내**: 그래프의 값은 'AI 도입 후 점수 − 도입 전 점수'를 그대로 나타낸 "
-        "원점수 변화량(점)입니다. AI를 사용하지 않은 학생들은 특별한 학습 개입이 없었기 때문에 "
-        "도입 전후 성적이 거의 그대로 유지되어 변화량이 0점 부근에 몰려 있으며, 이는 AI 사용 "
-        "그룹과 비교했을 때 '개선 효과가 없었다'는 점을 보여주는 정상적인 기준선(baseline) 분포입니다."
+        "💡 **그래프 해석 안내**: 막대의 값은 'AI 도입 후 점수 − 도입 전 점수'를 그대로 나타낸 "
+        "원점수 변화량(점)의 평균입니다. AI를 사용하지 않은 학생들은 특별한 학습 개입이 없었기 때문에 "
+        "도입 전후 성적이 그대로 유지되어 변화량이 정확히 0점이며, 이는 AI 사용 "
+        "그룹과 비교했을 때 '개선 효과가 없었다'는 점을 보여주는 정상적인 기준선(baseline)입니다."
     )
 
 # ════════════════════════════════════════════════════════════════
-# 7. 히트맵 — 스크린타임 × 공부시간 (라벨/설명 보강)
+# 7. 히트맵 — 상관관계 히트맵 (-1~1 범위로 고정)
+#    ※ 기존에는 구간별 '평균 성적 향상 점수'(최대 13~15점)를 색상으로
+#      표시해 값이 1을 훌쩍 넘어갔습니다. 히트맵에서 일반적으로 기대하는
+#      -1~1 범위를 지키도록 상관계수(correlation) 기반 히트맵으로 변경했습니다.
 # ════════════════════════════════════════════════════════════════
 elif selected == "heatmap":
-    ai_heat = df[df["uses_ai"]=="Yes"].copy()
+    ai_heat = df[df["uses_ai"] == "Yes"].copy()
 
-    ai_heat["screen_bin"] = pd.qcut(
-        ai_heat["daily_screen_time_hours"], q=3,
-        labels=["스크린타임 낮음", "스크린타임 보통", "스크린타임 높음"]
-    )
-    ai_heat["study_bin"] = pd.qcut(
-        ai_heat["study_hours_per_day"], q=3,
-        labels=["공부시간 적음", "공부시간 보통", "공부시간 많음"]
-    )
-
-    pivot = ai_heat.pivot_table(index="screen_bin", columns="study_bin",
-                                values="grade_change", aggfunc="mean", observed=True)
+    corr_cols = {
+        "study_hours_per_day": "공부 시간",
+        "daily_screen_time_hours": "스크린 타임",
+        "grade_change": "성적 향상도",
+    }
+    corr_matrix = ai_heat[list(corr_cols.keys())].rename(columns=corr_cols).corr()
 
     fig = px.imshow(
-        pivot,
+        corr_matrix,
         text_auto=".2f",
-        color_continuous_scale="YlOrRd",
-        labels=dict(x="일일 공부 시간대", y="일일 스크린 타임대", color="평균 성적 향상도"),
+        color_continuous_scale="RdBu_r",
+        zmin=-1, zmax=1,
+        labels=dict(color="상관계수"),
         aspect="auto",
     )
     fig.update_layout(
         title={
-            "text": "스크린 타임 × 공부 시간별 성적 향상<br><sup>(색이 진할수록 성적 향상 폭이 큼 / AI 사용 학생 대상)</sup>",
+            "text": "공부 시간 · 스크린 타임 · 성적 향상도 간 상관관계<br><sup>(값의 범위: -1 ~ 1 / AI 사용 학생 대상)</sup>",
             "x": 0.5
         }
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    study_corr = corr_matrix.loc["공부 시간", "성적 향상도"]
+    screen_corr = corr_matrix.loc["스크린 타임", "성적 향상도"]
     st.info(
-        "칸 안의 숫자는 해당 조합(예: 스크린타임 낮음 + 공부시간 많음)에 속한 학생들의 "
-        "평균 성적 향상도(점)입니다. 색이 진할수록 향상 폭이 크다는 뜻이며, "
-        "일반적으로 스크린 타임은 적고 공부 시간은 확보된 구간에서 성적 향상 효과가 큰 경향을 보입니다."
+        f"공부 시간과 성적 향상도의 상관계수는 **{study_corr:+.2f}**, "
+        f"스크린 타임과 성적 향상도의 상관계수는 **{screen_corr:+.2f}**입니다. "
+        "상관계수는 항상 -1(강한 음의 관계) ~ +1(강한 양의 관계) 사이의 값을 가지며, "
+        "0에 가까울수록 두 변수 간 선형적 관계가 약하다는 뜻입니다. "
+        "대각선은 자기 자신과의 상관관계이므로 항상 1입니다."
     )
 
 st.markdown("---")
