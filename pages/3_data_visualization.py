@@ -26,7 +26,7 @@ st.markdown("---")
 @st.cache_data
 def load_data():
     # 업로드된 전처리 완료 파일명 지정
-    df = pd.read_csv("preprocessed_sau_data.csv")
+    df = pd.read_csv("cleaned_student_ai_data.csv")
     # 성적 변화량 계산 (도입 후 - 도입 전)
     df["grade_change"] = df["grades_after_ai"] - df["grades_before_ai"]
     return df
