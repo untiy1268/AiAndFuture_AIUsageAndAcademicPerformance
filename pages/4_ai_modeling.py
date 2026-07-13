@@ -9,7 +9,6 @@ from sklearn.preprocessing import OrdinalEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.dummy import DummyRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 import plotly.express as px
@@ -145,20 +144,7 @@ def train_and_cache_pipelines(dataset_key: str, _df, feature_cols, target_col):
     trained_pipelines = {}
     results = {}
 
-    # 1. 🎯 Baseline 모델 (기준선 수평 타겟용 레퍼런스 모델)
-    baseline_model = DummyRegressor(strategy='mean')
-    baseline_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('regressor', baseline_model)])
-
-    baseline_pipeline.fit(X_train, y_train)
-    b_preds = baseline_pipeline.predict(X_test)
-    baseline_metrics = {
-        "MSE": mean_squared_error(y_test, b_preds),
-        "RMSE": np.sqrt(mean_squared_error(y_test, b_preds)),
-        "MAE": mean_absolute_error(y_test, b_preds),
-        "R2": r2_score(y_test, b_preds)
-    }
-
-    # 2. 메인 예측 모델 파이프라인 학습 루프
+    # 메인 예측 모델 파이프라인 학습 루프
     # 💡 st.cache_resource가 코드/데이터 변경 시 캐시를 자동으로 무효화해주므로,
     # 예전처럼 디스크에 joblib 파일로 저장해두고 재사용하지 않는다.
     # (스키마가 바뀐 뒤에도 예전 파일을 그대로 불러오는 게 실시간 예측 오류의 원인이었다.)
@@ -178,9 +164,9 @@ def train_and_cache_pipelines(dataset_key: str, _df, feature_cols, target_col):
         trained_pipelines[model_name] = pipeline
         results[model_name] = {"MSE": mse, "RMSE": rmse, "MAE": mae, "R2": r2, "preds": preds}
 
-    return trained_pipelines, results, y_test, cat_cols, num_cols, baseline_metrics
+    return trained_pipelines, results, y_test, cat_cols, num_cols
 
-trained_models, evaluation_results, y_test_actual, cat_cols, num_cols, baseline_metrics = train_and_cache_pipelines(
+trained_models, evaluation_results, y_test_actual, cat_cols, num_cols = train_and_cache_pipelines(
     dataset_key, df_active, feature_cols, target_col
 )
 
@@ -224,29 +210,13 @@ with tabs[0]:
         fig_box.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
         st.plotly_chart(fig_box, width='stretch')
 
-    st.markdown("---")
-    st.subheader("🔗 학습 시간 vs 성적 변화 상관관계")
-    fig_scatter_study = px.scatter(
-        df_active, x="study_hours_per_day", y="grades_after_ai", color="purpose_of_ai",
-        size="daily_screen_time_hours", hover_data=["age", "ai_tools_used"],
-        title="⏱️ 일평균 자습 시간과 AI 사용 후 성적의 관계",
-        labels={"study_hours_per_day": "일평균 자습 시간", "grades_after_ai": "AI 활용 후 성적"},
-        template="plotly_white"
-    )
-    fig_scatter_study.update_layout(margin=dict(l=40, r=40, t=50, b=40))
-    st.plotly_chart(fig_scatter_study, width='stretch')
-
 # --- Tab 2: 모델 성능 및 분석 ---
 with tabs[1]:
     st.subheader("📈 모델 성능 비교 및 심층 분석")
 
-    st.markdown("#### 🏁 기준선(Baseline) 대비 모델 성능 비교")
+    st.markdown("#### 📊 모델별 성능 비교")
 
-    metric_rows = [{
-        "모델": "Baseline (평균값 예측)",
-        "MSE": baseline_metrics["MSE"], "RMSE": baseline_metrics["RMSE"],
-        "MAE": baseline_metrics["MAE"], "R2": baseline_metrics["R2"]
-    }]
+    metric_rows = []
     for model_name, res in evaluation_results.items():
         metric_rows.append({"모델": model_name, "MSE": res["MSE"], "RMSE": res["RMSE"], "MAE": res["MAE"], "R2": res["R2"]})
     metric_df = pd.DataFrame(metric_rows)
@@ -268,7 +238,7 @@ with tabs[1]:
         fig_mse = px.bar(
             metric_df, x="모델", y="MSE", color="모델",
             title="📉 모델별 MSE 비교 (낮을수록 좋음)",
-            color_discrete_sequence=[COLOR_BASELINE, COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
             template="plotly_white"
         )
         fig_mse.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
@@ -277,7 +247,7 @@ with tabs[1]:
         fig_mae = px.bar(
             metric_df, x="모델", y="MAE", color="모델",
             title="📉 모델별 MAE 비교 (낮을수록 좋음)",
-            color_discrete_sequence=[COLOR_BASELINE, COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
             template="plotly_white"
         )
         fig_mae.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
@@ -288,7 +258,7 @@ with tabs[1]:
         fig_rmse = px.bar(
             metric_df, x="모델", y="RMSE", color="모델",
             title="📉 모델별 RMSE 비교 (낮을수록 좋음)",
-            color_discrete_sequence=[COLOR_BASELINE, COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
             template="plotly_white"
         )
         fig_rmse.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
@@ -297,7 +267,7 @@ with tabs[1]:
         fig_r2 = px.bar(
             metric_df, x="모델", y="R2", color="모델",
             title="📈 모델별 R² 비교 (높을수록 좋음)",
-            color_discrete_sequence=[COLOR_BASELINE, COLOR_SECOND, COLOR_MAIN],
+            color_discrete_sequence=[COLOR_SECOND, COLOR_MAIN],
             template="plotly_white"
         )
         fig_r2.update_layout(showlegend=False, margin=dict(l=40, r=40, t=50, b=40))
