@@ -8,7 +8,7 @@ st.set_page_config(page_title="학생 AI 사용 데이터 시각화", page_icon=
 
 st.title("📈 학생 AI 활용 및 성적 향상 데이터 시각화 (EDA)")
 st.markdown("### 🎯 주제: AI를 활용한 학습이 학생 성적 향상에 도움이 될까?")
-st.caption("※ 본 데이터는 전처리(표준화)가 완료된 데이터로, 성적 및 시간 지표는 Z-Score(상대적 수치)로 표현됩니다.")
+st.caption("※ 본 데이터는 학생 100명의 실제 성적(0~100점) 및 학습 습관 원자료를 기반으로 합니다.")
 
 # ── 설명 박스(st.info/st.warning) 글자 크기 확대를 위한 CSS ──────────
 st.markdown("""
@@ -25,8 +25,8 @@ st.markdown("---")
 # ── 데이터 로드 ──────────────────────────────────────────────────
 @st.cache_data
 def load_data():
-    # 업로드된 전처리 완료 파일명 지정
-    df = pd.read_csv("cleaned_student_ai_data.csv")
+    # 원본 데이터 파일명 지정 (uses_ai 컬럼이 필요하므로 전처리 전 원본을 사용)
+    df = pd.read_csv("students_ai_usage.csv")
     # 성적 변화량 계산 (도입 후 - 도입 전)
     df["grade_change"] = df["grades_after_ai"] - df["grades_before_ai"]
     return df
@@ -120,17 +120,16 @@ elif selected == "grouped_bar":
 
     fig.update_layout(
         barmode="group",
-        title={"text": "AI 사용 전후 평균 성적 변화 (표준화 점수)", "x": 0.5},
-        yaxis_title="평균 성적 (Z-Score)",
-        yaxis_range=[-1.5, 1.5]  # 표준화 스케일에 맞게 조정
+        title={"text": "AI 사용 전후 평균 성적 변화 (원점수)", "x": 0.5},
+        yaxis_title="평균 성적 (100점 만점)",
     )
     st.plotly_chart(fig, use_container_width=True)
 
     avg_change_yes = ai_yes["grade_change"].mean()
     avg_change_no = ai_no["grade_change"].mean()
     st.info(
-        f"AI를 사용한 학생들의 평균 성적은 표준화 수치 기준 **+{avg_change_yes:.2f}** 향상되었습니다. "
-        f"반면 미사용 학생의 성적은 평균 **{avg_change_no:.2f}**로 오히려 감소하는 경향을 보였습니다. "
+        f"AI를 사용한 학생들의 평균 성적은 **+{avg_change_yes:.2f}점** 향상되었습니다. "
+        f"반면 미사용 학생의 성적은 평균 **{avg_change_no:+.2f}점**으로 거의 변화가 없었습니다. "
         f"이를 통해 AI를 활용한 학습이 성적 향상에 긍정적인 도움이 되었음을 유추할 수 있습니다."
     )
 
@@ -151,7 +150,7 @@ elif selected == "tool_bar":
     )
     fig.update_layout(
         title={"text": "AI 도구별 평균 성적 향상 비교", "x": 0.5},
-        xaxis_title="평균 성적 향상도 (Z-Score 변화량)",
+        xaxis_title="평균 성적 향상도 (점)",
         yaxis_title="",
         showlegend=False
     )
@@ -183,7 +182,7 @@ elif selected == "purpose_bar":
     fig.update_layout(
         title={"text": "AI 활용 목적별 평균 성적 향상", "x": 0.5},
         xaxis_title="AI 활용 목적",
-        yaxis_title="평균 성적 향상도 (Z-Score 변화량)",
+        yaxis_title="평균 성적 향상도 (점)",
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -216,7 +215,7 @@ elif selected == "scatter":
     fig.update_layout(
         title={"text": "공부 시간대별 평균 성적 향상 (AI 사용 학생 대상)", "x": 0.5},
         xaxis_title="일일 공부 시간대",
-        yaxis_title="평균 성적 향상도 (Z-Score 변화량)",
+        yaxis_title="평균 성적 향상도 (점)",
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -247,7 +246,7 @@ elif selected == "boxplot":
 
     fig.update_layout(
         title={"text": "교육 수준 × AI 사용 여부별 성적 향상 분포", "x": 0.5},
-        yaxis_title="성적 향상도 (Z-Score 변화량)",
+        yaxis_title="성적 향상도 (점)",
         showlegend=False
     )
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
@@ -265,12 +264,10 @@ elif selected == "boxplot":
             st.warning(f"**{edu_labels[edu]}**의 AI 사용 학생 데이터가 부족합니다.")
 
     st.info(
-        "💡 **AI 미사용 그룹의 분포가 음수까지 내려가는 이유**: 그래프의 값은 절대 점수가 아니라 "
-        "'AI 도입 전후 성적 변화량'을 표준화(Z-Score)한 값입니다. AI를 사용하지 않은 학생들은 "
-        "특별한 학습 개입이 없었기 때문에, 원래 성적이 자연스럽게 오르내리는 변동(시험 난이도, "
-        "컨디션 등)만 반영되어 향상과 하락이 고르게 섞여 있습니다. 그 결과 평균이 0에 가깝고 "
-        "일부 학생은 음수(성적 하락)로 나타나는 것이며, 이는 AI 사용 그룹과 비교했을 때 "
-        "'개선 효과가 없었다'는 점을 보여주는 정상적인 기준선(baseline) 분포입니다."
+        "💡 **그래프 해석 안내**: 그래프의 값은 'AI 도입 후 점수 − 도입 전 점수'를 그대로 나타낸 "
+        "원점수 변화량(점)입니다. AI를 사용하지 않은 학생들은 특별한 학습 개입이 없었기 때문에 "
+        "도입 전후 성적이 거의 그대로 유지되어 변화량이 0점 부근에 몰려 있으며, 이는 AI 사용 "
+        "그룹과 비교했을 때 '개선 효과가 없었다'는 점을 보여주는 정상적인 기준선(baseline) 분포입니다."
     )
 
 # ════════════════════════════════════════════════════════════════
@@ -308,12 +305,9 @@ elif selected == "heatmap":
 
     st.info(
         "칸 안의 숫자는 해당 조합(예: 스크린타임 낮음 + 공부시간 많음)에 속한 학생들의 "
-        "평균 성적 향상도입니다. 색이 진할수록 향상 폭이 크다는 뜻이며, "
-        "일반적으로 스크린 타임은 적고 공부 시간은 확보된 구간에서 성적 향상 효과가 큰 경향을 보입니다.\n\n"
-        "※ 성적 향상도는 '도입 후 점수 − 도입 전 점수'를 표준화(Z-Score)한 값이라, "
-        "이론상 절댓값이 1을 넘을 수도 있습니다. 1이 상한선이 아니라 "
-        "'평균보다 얼마나 더/덜 올랐는지'를 나타내는 상대적 지표로 이해하시면 됩니다."
+        "평균 성적 향상도(점)입니다. 색이 진할수록 향상 폭이 크다는 뜻이며, "
+        "일반적으로 스크린 타임은 적고 공부 시간은 확보된 구간에서 성적 향상 효과가 큰 경향을 보입니다."
     )
 
 st.markdown("---")
-st.caption(f"📌 데이터 출처: preprocessed_sau_data.csv (총 샘플 수: {len(df)}개) | 시각화 도구: Plotly")
+st.caption(f"📌 데이터 출처: students_ai_usage.csv (총 샘플 수: {len(df)}개) | 시각화 도구: Plotly")
