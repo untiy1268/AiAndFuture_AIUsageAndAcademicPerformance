@@ -63,20 +63,22 @@ selected = chart_options[selected_label]
 st.subheader(selected_label)
 
 # ════════════════════════════════════════════════════════════════
-# 1. Donut Chart — AI 사용 비율
+# 1. Donut Chart — AI 도구 사용 분포 (미사용 포함)
 # ════════════════════════════════════════════════════════════════
 if selected == "donut":
-    ai_counts = df["uses_ai"].value_counts().reset_index()
-    ai_counts.columns = ["uses_ai", "count"]
-    ai_counts["label"] = ai_counts["uses_ai"].map({"Yes": "AI 사용", "No": "AI 미사용"})
+    # ai_tools_used의 결측치(None)를 "미사용"으로 채워서 그대로 집계
+    tool_counts = df["ai_tools_used"].fillna("미사용").value_counts().reset_index()
+    tool_counts.columns = ["tool", "count"]
+
+    TOOL_COLORS_ALL = {**TOOL_COLORS, "미사용": COLOR_NO}
 
     fig = px.pie(
-        ai_counts,
+        tool_counts,
         values="count",
-        names="label",
+        names="tool",
         hole=0.55,
-        color="label",
-        color_discrete_map={"AI 사용": COLOR_YES, "AI 미사용": COLOR_NO}
+        color="tool",
+        color_discrete_map=TOOL_COLORS_ALL
     )
     fig.update_traces(
         textinfo="percent+label",
@@ -85,18 +87,20 @@ if selected == "donut":
     )
 
     total_students = len(df)
-    fig.update_layout(title={"text": f"AI 사용 여부 분포 (n={total_students})", "x": 0.5}, showlegend=False)
+    fig.update_layout(
+        title={"text": f"AI 도구 사용 분포 (미사용 포함, n={total_students})", "x": 0.5},
+        showlegend=False
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    yes_count = df['uses_ai'].value_counts().get('Yes', 0)
-    no_count = df['uses_ai'].value_counts().get('No', 0)
-    yes_pct = (yes_count / total_students) * 100
-    no_pct = (no_count / total_students) * 100
+    summary_parts = []
+    for _, row in tool_counts.sort_values("count", ascending=False).iterrows():
+        pct = row["count"] / total_students * 100
+        summary_parts.append(f"**{row['tool']}** {row['count']}명({pct:.0f}%)")
 
     st.info(
-        f"전체 학생 {total_students}명 중 AI 사용 **{yes_count}명({yes_pct:.0f}%)**, "
-        f"미사용 **{no_count}명({no_pct:.0f}%)** 입니다. "
-        f"약 {yes_pct:.0f}%의 학생이 이미 AI를 학습에 활용하고 있습니다."
+        f"전체 학생 {total_students}명의 AI 도구 사용 분포는 " + ", ".join(summary_parts) + " 입니다. "
+        "미사용 학생 비율까지 함께 확인할 수 있어, 특정 도구 편중 없이 전체 사용 현황을 한눈에 볼 수 있습니다."
     )
 
 # ════════════════════════════════════════════════════════════════
