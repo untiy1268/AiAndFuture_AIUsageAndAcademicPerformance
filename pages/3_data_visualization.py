@@ -8,7 +8,7 @@ st.set_page_config(page_title="학생 AI 사용 데이터 시각화", page_icon=
 
 st.title("📈 학생 AI 활용 및 성적 향상 데이터 시각화 (EDA)")
 st.markdown("### 🎯 주제: AI를 활용한 학습이 학생 성적 향상에 도움이 될까?")
-st.caption("※ 본 데이터는 학생 100명의 실제 성적(0~100점) 및 학습 습관 원자료를 기반으로 합니다.")
+st.caption("※ 본 데이터는 학생 100명의 실제 성적(0~100점) 및 학습 습관 데이터를 전처리(결측치/이상치 정리)한 자료를 기반으로 합니다.")
 
 # ── 설명 박스(st.info/st.warning) 글자 크기 확대를 위한 CSS ──────────
 st.markdown("""
@@ -25,8 +25,14 @@ st.markdown("---")
 # ── 데이터 로드 ──────────────────────────────────────────────────
 @st.cache_data
 def load_data():
-    # 원본 데이터 파일명 지정 (uses_ai 컬럼이 필요하므로 전처리 전 원본을 사용)
-    df = pd.read_csv("students_ai_usage.csv")
+    # 전처리 완료된 데이터 파일 사용
+    # (ai_tools_used / purpose_of_ai 컬럼의 결측값 = AI를 사용하지 않은 학생)
+    df = pd.read_csv("cleaned_student_ai_data.csv")
+
+    # 전처리 후 데이터에는 uses_ai 컬럼이 별도로 없으므로,
+    # ai_tools_used 값이 비어있는지 여부로 AI 사용 여부를 새로 만들어 줍니다.
+    df["uses_ai"] = df["ai_tools_used"].notna().map({True: "Yes", False: "No"})
+
     # 성적 변화량 계산 (도입 후 - 도입 전)
     df["grade_change"] = df["grades_after_ai"] - df["grades_before_ai"]
     return df
@@ -353,4 +359,4 @@ elif selected == "heatmap":
     )
 
 st.markdown("---")
-st.caption(f"📌 데이터 출처: students_ai_usage.csv (총 샘플 수: {len(df)}개) | 시각화 도구: Plotly")
+st.caption(f"📌 데이터 출처: cleaned_student_ai_data.csv (전처리 완료 / 총 샘플 수: {len(df)}개) | 시각화 도구: Plotly")
