@@ -51,11 +51,10 @@ st.sidebar.title("📊 차트 선택")
 chart_options = {
     "1️⃣ AI 사용 여부 비율": "donut",
     "2️⃣ AI 사용 전후 성적 비교": "grouped_bar",
-    "3️⃣ AI 도구별 평균 성적 향상": "lollipop",
-    "4️⃣ AI 활용 목적별 성적 향상": "purpose_box",
-    "5️⃣ 공부 시간 vs 성적 향상": "study_bar",
-    "6️⃣ 교육 수준별 성적 분포": "edu_bar",
-    "7️⃣ 상관관계 히트맵": "heatmap",
+    "3️⃣ AI 도구별 / 목적별 성적 향상 비교": "tool_purpose_box",
+    "4️⃣ 공부 시간 vs 성적 향상": "study_bar",
+    "5️⃣ 교육 수준별 성적 분포": "edu_bar",
+    "6️⃣ 상관관계 히트맵": "heatmap",
 }
 selected_label = st.sidebar.radio("보고 싶은 차트를 선택하세요", list(chart_options.keys()))
 selected = chart_options[selected_label]
@@ -139,93 +138,92 @@ elif selected == "grouped_bar":
     )
 
 # ════════════════════════════════════════════════════════════════
-# 3. Lollipop Chart — 도구별 향상
+# 3. Box Plot × 2 — 도구별 성적 향상 & 목적별 성적 향상 (한 페이지에 함께 표시)
+#    ※ 기존 롤리팝 차트는 평균만 보여줘 그룹 내 편차가 가려졌습니다.
+#      박스플롯 + 개별 점(strip)으로 바꿔 도구별 향상 분포까지 함께 볼 수
+#      있도록 했고, 목적별 박스플롯과 나란히 배치해 두 기준을 한 번에
+#      비교할 수 있게 했습니다.
 # ════════════════════════════════════════════════════════════════
-elif selected == "lollipop":
-    tool_change = df[df["uses_ai"]=="Yes"].groupby("ai_tools_used")["grade_change"].agg(
-        mean="mean", std="std", count="count"
-    ).sort_values("mean").reset_index()
+elif selected == "tool_purpose_box":
+    ai_df = df[df["uses_ai"] == "Yes"].copy()
+    ai_df["purpose_kr"] = ai_df["purpose_of_ai"].map(PURPOSE_KR)
 
-    fig = go.Figure()
-    for _, row in tool_change.iterrows():
-        fig.add_trace(go.Scatter(
-            x=[0, row["mean"]], y=[row["ai_tools_used"], row["ai_tools_used"]],
-            mode="lines", line=dict(color=TOOL_COLORS[row["ai_tools_used"]], width=3),
+    col1, col2 = st.columns(2)
+
+    # ── 3-1. AI 도구별 성적 향상 분포 (박스플롯) ─────────────────
+    with col1:
+        st.markdown("#### 🛠️ AI 도구별 성적 향상 분포")
+        order_tool = ai_df.groupby("ai_tools_used")["grade_change"].mean().sort_values().index.tolist()
+
+        fig_tool = px.box(
+            ai_df,
+            x="ai_tools_used",
+            y="grade_change",
+            color="ai_tools_used",
+            category_orders={"ai_tools_used": order_tool},
+            color_discrete_map=TOOL_COLORS,
+            points="all",
+        )
+        fig_tool.update_traces(marker=dict(opacity=0.6, size=6))
+        fig_tool.update_layout(
+            title={"text": "AI 도구별 성적 향상 분포 (박스플롯)", "x": 0.5},
+            xaxis_title="AI 도구",
+            yaxis_title="성적 향상도 (점)",
             showlegend=False,
-        ))
-    fig.add_trace(go.Scatter(
-        x=tool_change["mean"], y=tool_change["ai_tools_used"],
-        mode="markers+text",
-        marker=dict(size=18, color=[TOOL_COLORS[t] for t in tool_change["ai_tools_used"]]),
-        text=[f"+{v:.2f}" for v in tool_change["mean"]],
-        textposition="middle right",
-        showlegend=False,
-    ))
-    fig.update_layout(
-        title={"text": "AI 도구별 평균 성적 향상 비교 (롤리팝 차트)", "x": 0.5},
-        xaxis_title="평균 성적 향상도 (점)",
-        yaxis_title="",
-        xaxis=dict(range=[0, tool_change["mean"].max() * 1.35]),
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        )
+        st.plotly_chart(fig_tool, use_container_width=True)
 
-    best = tool_change.loc[tool_change["mean"].idxmax(), "ai_tools_used"]
-    max_val = tool_change["mean"].max()
-    gap = tool_change["mean"].max() - tool_change["mean"].min()
-    st.info(
-        f"분석 결과, **{best}**를 사용한 학생 그룹의 성적 향상 폭이 가장 컸습니다 (+{max_val:.2f}). "
-        f"다만 도구 간 평균 차이는 최대 {gap:.2f}점으로, 그룹별 표준편차(약 3~4점)에 비해 크지 않아 "
-        "도구 선택보다는 '사용 여부 자체'가 더 결정적인 요인으로 보입니다."
-    )
+        tool_means = ai_df.groupby("ai_tools_used")["grade_change"].mean()
+        best_tool = tool_means.idxmax()
+        gap_tool = tool_means.max() - tool_means.min()
+        st.info(
+            f"**{best_tool}**를 사용한 학생 그룹의 향상 폭이 가장 컸습니다 (+{tool_means.max():.2f}). "
+            f"다만 도구 간 평균 차이는 최대 {gap_tool:.2f}점으로 박스와 점들이 크게 겹쳐 있어, "
+            "도구 선택보다는 '사용 여부 자체'가 더 결정적인 요인으로 보입니다."
+        )
 
-# ════════════════════════════════════════════════════════════════
-# 4. Box Plot — 목적별 성적 향상 (분포까지 함께 표시)
-#    ※ 평균만 막대로 보여주면 목적별 개인차(편차)가 가려집니다. 박스플롯 +
-#      개별 점(strip)을 쓰면 그룹 간 차이가 실제로 유의미한 수준인지,
-#      아니면 그룹 내 편차에 묻히는 수준인지까지 함께 판단할 수 있습니다.
-# ════════════════════════════════════════════════════════════════
-elif selected == "purpose_box":
-    purpose_df = df[df["uses_ai"] == "Yes"].copy()
-    purpose_df["purpose_kr"] = purpose_df["purpose_of_ai"].map(PURPOSE_KR)
+    # ── 3-2. AI 활용 목적별 성적 향상 분포 (박스플롯) ────────────
+    with col2:
+        st.markdown("#### 🎯 AI 활용 목적별 성적 향상 분포")
+        order_purpose = ai_df.groupby("purpose_kr")["grade_change"].mean().sort_values().index.tolist()
+        color_map_kr = {PURPOSE_KR[k]: v for k, v in PURPOSE_COLORS.items()}
 
-    order = purpose_df.groupby("purpose_kr")["grade_change"].mean().sort_values().index.tolist()
-    color_map_kr = {PURPOSE_KR[k]: v for k, v in PURPOSE_COLORS.items()}
+        fig_purpose = px.box(
+            ai_df,
+            x="purpose_kr",
+            y="grade_change",
+            color="purpose_kr",
+            category_orders={"purpose_kr": order_purpose},
+            color_discrete_map=color_map_kr,
+            points="all",
+        )
+        fig_purpose.update_traces(marker=dict(opacity=0.6, size=6))
+        fig_purpose.update_layout(
+            title={"text": "AI 활용 목적별 성적 향상 분포 (박스플롯)", "x": 0.5},
+            xaxis_title="AI 활용 목적",
+            yaxis_title="성적 향상도 (점)",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_purpose, use_container_width=True)
 
-    fig = px.box(
-        purpose_df,
-        x="purpose_kr",
-        y="grade_change",
-        color="purpose_kr",
-        category_orders={"purpose_kr": order},
-        color_discrete_map=color_map_kr,
-        points="all",
-    )
-    fig.update_traces(marker=dict(opacity=0.6, size=6))
-    fig.update_layout(
-        title={"text": "AI 활용 목적별 성적 향상 분포 (박스플롯)", "x": 0.5},
-        xaxis_title="AI 활용 목적",
-        yaxis_title="성적 향상도 (점)",
-        showlegend=False,
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    means = purpose_df.groupby("purpose_kr")["grade_change"].mean()
-    best = means.idxmax()
-    st.info(
-        f"평균만 보면 **{best}** 목적 그룹의 향상 폭이 가장 크지만(+{means.max():.2f}), "
-        "박스와 점들이 서로 크게 겹쳐 있어 목적 간 차이가 뚜렷하다고 보기는 어렵습니다. "
-        "즉 '무엇을 위해' AI를 썼는지보다, 앞서 본 것처럼 'AI를 썼는지 여부'가 더 중요한 요인으로 보입니다."
-    )
+        purpose_means = ai_df.groupby("purpose_kr")["grade_change"].mean()
+        best_purpose = purpose_means.idxmax()
+        st.info(
+            f"평균만 보면 **{best_purpose}** 목적 그룹의 향상 폭이 가장 크지만(+{purpose_means.max():.2f}), "
+            "박스와 점들이 서로 크게 겹쳐 있어 목적 간 차이가 뚜렷하다고 보기는 어렵습니다. "
+            "즉 '무엇을 위해' AI를 썼는지보다, 'AI를 썼는지 여부'가 더 중요한 요인으로 보입니다."
+        )
 
 # ════════════════════════════════════════════════════════════════
-# 5. 공부 시간대별 성적 향상 (구간 막대그래프)
+# 4. 공부 시간대별 성적 향상 (5단계 구간 막대그래프)
 # ════════════════════════════════════════════════════════════════
 elif selected == "study_bar":
     ai_df = df[df["uses_ai"] == "Yes"].copy()
 
-    # 공부 시간을 3단계로 구간화하여 직관적으로 비교
+    # 공부 시간을 5단계로 구간화하여 더 세밀하게 비교
+    study_labels = ["매우 적음", "적음", "보통", "많음", "매우 많음"]
     ai_df["study_group"] = pd.qcut(
-        ai_df["study_hours_per_day"], q=3, labels=["공부시간 적음", "보통", "많음"]
+        ai_df["study_hours_per_day"], q=5, labels=study_labels
     )
     grouped = ai_df.groupby("study_group", observed=True)["grade_change"].mean().reset_index()
 
@@ -234,12 +232,13 @@ elif selected == "study_bar":
         x="study_group",
         y="grade_change",
         color="study_group",
-        color_discrete_sequence=["#A8C4E0", "#4C72B0", "#2C4870"],
+        category_orders={"study_group": study_labels},
+        color_discrete_sequence=["#DCE9F5", "#A8C4E0", "#6E97C7", "#4C72B0", "#2C4870"],
         text=[f"+{v:.2f}" for v in grouped["grade_change"]],
     )
     fig.update_traces(textposition="outside")
     fig.update_layout(
-        title={"text": "공부 시간대별 평균 성적 향상 (AI 사용 학생 대상)", "x": 0.5},
+        title={"text": "공부 시간대별 평균 성적 향상 (AI 사용 학생 대상, 5단계)", "x": 0.5},
         xaxis_title="일일 공부 시간대",
         yaxis_title="평균 성적 향상도 (점)",
         showlegend=False,
@@ -248,14 +247,14 @@ elif selected == "study_bar":
 
     corr_val = ai_df["study_hours_per_day"].corr(ai_df["grade_change"])
     st.info(
-        "공부 시간을 '적음/보통/많음' 세 그룹으로 나누어 비교한 결과입니다. "
+        "공부 시간을 '매우 적음/적음/보통/많음/매우 많음' 다섯 그룹으로 나누어 비교한 결과입니다. "
         f"참고로 전체 데이터의 상관계수는 r = {corr_val:.2f}로 0에 가까워, "
         "그룹 간 차이가 크지 않다면 단순히 공부 시간을 늘리는 것보다 "
         "**AI를 얼마나 효율적으로 활용하는지가 성적 향상에 더 중요한 요인**일 수 있음을 시사합니다."
     )
 
 # ════════════════════════════════════════════════════════════════
-# 6. Grouped Bar — 교육 수준별 평균 성적 향상
+# 5. Grouped Bar — 교육 수준별 평균 성적 향상
 #    ※ AI 미사용 그룹은 grade_change가 전원 정확히 0점으로 값의 편차가
 #      전혀 없습니다. 분산이 없는 데이터는 박스/바이올린플롯보다
 #      막대그래프(오차막대 포함)로 표현하는 것이 더 명확합니다.
@@ -311,7 +310,7 @@ elif selected == "edu_bar":
     )
 
 # ════════════════════════════════════════════════════════════════
-# 7. 히트맵 — 상관관계 히트맵 (-1~1 범위로 고정)
+# 6. 히트맵 — 상관관계 히트맵 (-1~1 범위로 고정)
 #    ※ 기존에는 구간별 '평균 성적 향상 점수'(최대 13~15점)를 색상으로
 #      표시해 값이 1을 훌쩍 넘어갔습니다. 히트맵에서 일반적으로 기대하는
 #      -1~1 범위를 지키도록 상관계수(correlation) 기반 히트맵으로 변경했습니다.
