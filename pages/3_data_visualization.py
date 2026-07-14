@@ -98,11 +98,6 @@ if selected == "donut":
         pct = row["count"] / total_students * 100
         summary_parts.append(f"**{row['tool']}** {row['count']}명({pct:.0f}%)")
 
-    st.info(
-        f"전체 학생 {total_students}명의 AI 도구 사용 분포는 " + ", ".join(summary_parts) + " 입니다. "
-        "미사용 학생 비율까지 함께 확인할 수 있어, 특정 도구 편중 없이 전체 사용 현황을 한눈에 볼 수 있습니다."
-    )
-
 # ════════════════════════════════════════════════════════════════
 # 2. Grouped Bar — 전후 성적 비교
 # ════════════════════════════════════════════════════════════════
